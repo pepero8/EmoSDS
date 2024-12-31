@@ -1,0 +1,3 @@
+[submodule "SpeechGPT"]
+	path = SpeechGPT
+	url = https://github.com/pepero8/SpeechGPT
