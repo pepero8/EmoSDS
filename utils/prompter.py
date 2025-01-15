@@ -1,14 +1,10 @@
-
-import json
-import os.path as osp
-from typing import Union, List
+from typing import Union
 
 
 class Prompter(object):
 
     def __init__(self, verbose: bool = False):
         self._verbose = verbose
-
 
     def generate_prompt(
         self,
@@ -22,7 +18,3 @@ class Prompter(object):
         if self._verbose:
             print(res)
         return res
-
-
-
-

@@ -1,31 +1,16 @@
 #!/bin/bash
 
-# METAROOT="output/stage2/"
 METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
-DATAROOT="data/stage2"
-OUTROOT="output/stage2"
+DATAROOT="data/"
+OUTROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr"
 CACHEROOT="${DATAROOT}/cache/"
 
 
 mkdir -p ${CACHEROOT}/tokenized/train/
 mkdir -p ${CACHEROOT}/tokenized/valid/
 
+echo "================================= asr fine-tuning ================================="
 
-#ddp realted
-# NNODE=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
-# MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-# NODE_RANK=$(($(scontrol show hostnames "$SLURM_JOB_NODELIST" | grep -Fn $(hostname) | cut --delimiter=":" --fields=1)-1))
-
-
-echo "stage2: asr fine-tuning"
-
-
-# torchrun \
-#     --nnode $NNODE \
-#     --nproc_per_node 8 \
-#     --node_rank $NODE_RANK \
-#     --master_addr $MASTER_ADDR \
-#     --master_port 29501  \
 
 # --nproc_per_node를 사용할 gpu 개수로 설정하면 됨
 torchrun \
@@ -33,7 +18,7 @@ torchrun \
     --standalone \
 src/train/asr_sft.py \
     --model_name_or_path "${METAROOT}" \
-    --data_path "${DATAROOT}/asr_data_librispeech_styletalk.jsonl" \
+    --data_path "${DATAROOT}/asr_task_librispeech_styletalk.jsonl" \
     --val_set_size 29 \
     --cache_dir ${CACHEROOT} \
     --preprocessing_num_workers 10 \
