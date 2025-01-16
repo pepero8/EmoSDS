@@ -252,8 +252,8 @@ def main(
 ):
     from speech2unit.speech2unit import Speech2UnitCustom
 
-    styletalk_train = "data/styletalk/train.csv"
-    styletalk_eval = "data/styletalk/eval_without_weather_465.csv"
+    styletalk_train_csv = "data/styletalk/train.csv"
+    styletalk_eval_csv = "data/styletalk/eval_without_weather_465.csv"
 
     ckpt_dir = "utils/speech2unit/"
     s2u = Speech2UnitCustom(ckpt_dir=ckpt_dir)
@@ -273,8 +273,10 @@ def main(
                 "Skipping LibriSpeech dataset. You can provide path through --librispeech-dir option"
             )
 
-        styletalk_samples_train = asr_extract_samples_styletalk(styletalk_train, s2u)
-        styletalk_samples_eval = asr_extract_samples_styletalk(styletalk_eval, s2u)
+        styletalk_samples_train = asr_extract_samples_styletalk(
+            styletalk_train_csv, s2u
+        )
+        styletalk_samples_eval = asr_extract_samples_styletalk(styletalk_eval_csv, s2u)
 
         output_path_styletalk_train = "data/asr_task_styletalk_train.jsonl"
         output_path_styletalk_eval = "data/asr_task_styletalk_eval.jsonl"
