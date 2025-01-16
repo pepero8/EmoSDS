@@ -16,7 +16,8 @@ echo "================================= asr fine-tuning ========================
 torchrun \
     --nproc_per_node 2 \
     --standalone \
-src/train/asr_sft.py \
+src/train/sft.py \
+    --train_task "asr" \
     --model_name_or_path "${METAROOT}" \
     --data_path "${DATAROOT}/asr_task_librispeech_styletalk.jsonl" \
     --val_set_size 29 \
