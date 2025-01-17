@@ -196,12 +196,15 @@ def train():
     def build_styles_dict(style_tokens):
         dict = {}
         for i, style in enumerate(style_tokens):
-            dict.update(style, i)
+            dict[style] = i
         return dict
 
     # >> Extend vocab for speech units
     style_tokens = []
     valid_styles = {}
+    if training_args.train_task == "unified":
+        style_tokens = data_args.style_token_list.split()
+        valid_styles = build_styles_dict(style_tokens)
     if "<sosp>" not in tokenizer.get_vocab():
         units_size = 1000
         logger.info(f"Add special unit tokens <0>-<{units_size-1} to tokenizer.vocab")
@@ -209,8 +212,6 @@ def train():
         tokenizer.add_tokens(new_tokens)
         if training_args.train_task == "unified":
             logger.info(f"Add style tokens to tokenizer.vocab")
-            style_tokens = data_args.style_token_list.split()
-            valid_styles = build_styles_dict(style_tokens)
             tokenizer.add_tokens(style_tokens)
     for token in ["<sosp>", "<eosp>"] + style_tokens:
         if token not in tokenizer.get_vocab():
