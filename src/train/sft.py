@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 import transformers
 from transformers import Trainer
+from transformers import TrainingArguments  # ! 반드시 여기에서 import를 해야 함
 import logging
 
 
@@ -126,7 +127,6 @@ def train():
         AutoModelForCausalLM,
         AutoTokenizer,
         HfArgumentParser,
-        TrainingArguments,
         DataCollatorForSeq2Seq,
     )
     from transformers.trainer_utils import get_last_checkpoint
@@ -604,4 +604,12 @@ def train():
 
 
 if __name__ == "__main__":
+    from pathlib import Path
+    import sys
+
+    # > Add EmoSDS/ to path
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    sys.path.append(str(project_root))
+
     train()
