@@ -1,6 +1,6 @@
 #!/bin/bash
 
-METAROOT="output/asr/"
+METAROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr/"
 DATAROOT="data/"
 OUTROOT="/shared/NAS_SSD/jhl/futureinternet/output/unified"
 CACHEROOT="${DATAROOT}/cache/"
@@ -18,7 +18,7 @@ torchrun \
     --standalone \
 src/train/sft.py \
     --train_task "unified" \
-    --style_tokens "<anger> <disgust> <fear> <happiness> <neutral> <sadness> <surprise>" \
+    --style_token_list "<anger> <disgust> <fear> <happiness> <neutral> <sadness> <surprise>" \
     --model_name_or_path "${METAROOT}" \
     --data_path "${DATAROOT}/unified_task_dailytalk_train.jsonl" \
     --val_set_size 29 \
