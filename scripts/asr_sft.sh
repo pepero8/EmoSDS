@@ -16,7 +16,8 @@ echo "================================= asr fine-tuning ========================
 torchrun \
     --nproc_per_node 2 \
     --standalone \
-src/train/asr_sft.py \
+src/train/sft.py \
+    --train_task "asr" \
     --model_name_or_path "${METAROOT}" \
     --data_path "${DATAROOT}/asr_task_librispeech_styletalk.jsonl" \
     --val_set_size 29 \
@@ -32,7 +33,7 @@ src/train/asr_sft.py \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 32 \
     --num_train_epochs 10 \
-    --evaluation_strategy "no" \
+    --eval_strategy "no" \
     --save_strategy "steps" \
     --save_steps 100000 \
     --learning_rate 2e-4 \

@@ -2,9 +2,6 @@ import random
 import typer
 from typing_extensions import Annotated
 
-# import sys
-# sys.path.append("/home/jhwan98/EmoSDS/SpeechGPT/speechgpt")
-
 
 def asr_extract_samples_styletalk(csv_data_path, s2u, num_samples=20000):
     import pandas as pd
@@ -30,7 +27,7 @@ def asr_extract_samples_styletalk(csv_data_path, s2u, num_samples=20000):
     # >> Format data for LLM training
     formatted_samples = []
     for cur_audio_id, cur_text in sampled_data:
-        units = s2u(f"styletalk/audio/{cur_audio_id}")
+        units = s2u(f"data/styletalk/audio/{cur_audio_id}")
         sample = {
             "prefix": f"Transcribe following speech input: {units} > ",
             "plain_text": f"{cur_text.strip()}",
@@ -245,33 +242,47 @@ def main(
         typer.Argument(
             help="Specify task for dataset format. Options: ['asr', 'unified']"
         ),
-    ]
+    ],
+    librispeech_dir: Annotated[
+        str, typer.Option(help="Directory path for LibriSpeech dataset")
+    ] = None,
+    dailytalk_dir: Annotated[
+        str, typer.Option(help="Directory path for DailyTalk dataset")
+    ] = None,
 ):
     from speech2unit.speech2unit import Speech2UnitCustom
 
-    librispeech_dir = (
-        "/shared/NAS_SSD/wooyeol/LibriSpeech/train-clean-100/train-clean-100/"
-    )
-
-    styletalk_train = "data/styletalk/train.csv"
-    styletalk_eval = "data/styletalk/eval_without_weather_465.csv"
+    styletalk_train_csv = "data/styletalk/train.csv"
+    styletalk_eval_csv = "data/styletalk/eval_without_weather_465.csv"
 
     ckpt_dir = "utils/speech2unit/"
     s2u = Speech2UnitCustom(ckpt_dir=ckpt_dir)
 
     # >> build asr task dataset
     if task == "asr":
-        styletalk_samples_train = asr_extract_samples_styletalk(styletalk_train, s2u)
-        styletalk_samples_eval = asr_extract_samples_styletalk(styletalk_eval, s2u)
-        dailytalk_samples = asr_extract_samples_librispeech(librispeech_dir, s2u)
+
+        if librispeech_dir is not None:
+            librispeech_samples = asr_extract_samples_librispeech(librispeech_dir, s2u)
+            output_path_librispeech = "data/asr_task_librispeech.jsonl"
+            save_to_jsonl(librispeech_samples, output_path_librispeech)
+            print(
+                f"\nLibrispeech samples saved to {output_path_librispeech}: {len(librispeech_samples)}"
+            )
+        else:
+            print(
+                "Skipping LibriSpeech dataset. You can provide path through --librispeech-dir option"
+            )
+
+        styletalk_samples_train = asr_extract_samples_styletalk(
+            styletalk_train_csv, s2u
+        )
+        styletalk_samples_eval = asr_extract_samples_styletalk(styletalk_eval_csv, s2u)
 
         output_path_styletalk_train = "data/asr_task_styletalk_train.jsonl"
         output_path_styletalk_eval = "data/asr_task_styletalk_eval.jsonl"
-        output_path_librispeech = "data/asr_task_librispeech.jsonl"
 
         save_to_jsonl(styletalk_samples_train, output_path_styletalk_train)
         save_to_jsonl(styletalk_samples_eval, output_path_styletalk_eval)
-        save_to_jsonl(dailytalk_samples, output_path_librispeech)
 
         print(
             f"\nStyleTalk train samples saved to {output_path_styletalk_train}: {len(styletalk_samples_train)}"
@@ -279,14 +290,16 @@ def main(
         print(
             f"\nStyleTalk eval samples saved to {output_path_styletalk_eval}: {len(styletalk_samples_eval)}"
         )
-        print(
-            f"\nLibrispeech samples saved to {output_path_librispeech}: {len(dailytalk_samples)}"
-        )
 
     # >> build unified task dataset
     elif task == "unified":
+        if dailytalk_dir is None:
+            raise RuntimeError(
+                "Please provide dailytalk dir path through --dailytalk-dir"
+            )
+
         train_samples, test_samples = unified_extract_samples_dailytalk(
-            librispeech_dir, s2u, test_size=0.05
+            dailytalk_dir, s2u, test_size=0.05
         )
 
         output_path_dailytalk_train = "data/unified_task_dailytalk_train.jsonl"
