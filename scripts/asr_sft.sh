@@ -33,7 +33,7 @@ src/train/sft.py \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 32 \
     --num_train_epochs 10 \
-    --evaluation_strategy "no" \
+    --eval_strategy "no" \
     --save_strategy "steps" \
     --save_steps 100000 \
     --learning_rate 2e-4 \
