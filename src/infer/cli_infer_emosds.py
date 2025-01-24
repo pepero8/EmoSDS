@@ -38,7 +38,7 @@ Here's the prompt:\n\n"""
 
 # USER_INSTRUCTION = "Identify speaking style of given speech: {units}. Provide only the style label > ["
 DEFAULT_GEN_PARAMS = {
-    "max_new_tokens": 4096,
+    "max_new_tokens": 2048,
     "min_new_tokens": 10,
     "temperature": 0.6,
     "do_sample": True,
@@ -47,16 +47,16 @@ DEFAULT_GEN_PARAMS = {
 }
 
 
-def extract_text_between_tags(text, tag1="[EmoSDS] :", tag2="<eoa>"):
-    import re
+# def extract_text_between_tags(text, tag1="[EmoSDS] :", tag2="<eoa>"):
+#     import re
 
-    pattern = f"{re.escape(tag1)}(.*?){re.escape(tag2)}"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        response = match.group(1)
-    else:
-        response = ""
-    return response
+#     pattern = f"{re.escape(tag1)}(.*?){re.escape(tag2)}"
+#     match = re.search(pattern, text, re.DOTALL)
+#     if match:
+#         response = match.group(1)
+#     else:
+#         response = ""
+#     return response
 
 
 class EmoSDSInference:
@@ -124,38 +124,38 @@ class EmoSDSInference:
         prompt_seq = self.meta_instruction + self.template.format(prompt=processed_text)
         return prompt_seq
 
-    def postprocess(
-        self,
-        response: str,
-    ):
+    # def postprocess(
+    #     self,
+    #     response: str,
+    # ):
 
-        question = extract_text_between_tags(response, tag1="[Human]", tag2="<eoh>")
-        answer = extract_text_between_tags(
-            response + "<eoa>", tag1=f"[SpeechGPT] :", tag2="<eoa>"
-        )
-        tq = (
-            extract_text_between_tags(response, tag1="[SpeechGPT] :", tag2="; [ta]")
-            if "[ta]" in response
-            else ""
-        )
-        ta = (
-            extract_text_between_tags(response, tag1="[ta]", tag2="; [ua]")
-            if "[ta]" in response
-            else ""
-        )
-        ua = (
-            extract_text_between_tags(response + "<eoa>", tag1="[ua]", tag2="<eoa>")
-            if "[ua]" in response
-            else ""
-        )
+    #     question = extract_text_between_tags(response, tag1="[Human]", tag2="<eoh>")
+    #     answer = extract_text_between_tags(
+    #         response + "<eoa>", tag1=f"[SpeechGPT] :", tag2="<eoa>"
+    #     )
+    #     tq = (
+    #         extract_text_between_tags(response, tag1="[SpeechGPT] :", tag2="; [ta]")
+    #         if "[ta]" in response
+    #         else ""
+    #     )
+    #     ta = (
+    #         extract_text_between_tags(response, tag1="[ta]", tag2="; [ua]")
+    #         if "[ta]" in response
+    #         else ""
+    #     )
+    #     ua = (
+    #         extract_text_between_tags(response + "<eoa>", tag1="[ua]", tag2="<eoa>")
+    #         if "[ua]" in response
+    #         else ""
+    #     )
 
-        return {
-            "question": question,
-            "answer": answer,
-            "textQuestion": tq,
-            "textAnswer": ta,
-            "unitAnswer": ua,
-        }
+    #     return {
+    #         "question": question,
+    #         "answer": answer,
+    #         "textQuestion": tq,
+    #         "textAnswer": ta,
+    #         "unitAnswer": ua,
+    #     }
 
     def forward(self, prompts: List[str]):
         from transformers import GenerationConfig
@@ -236,6 +236,9 @@ def main(
     s2u_dir: Annotated[
         str, typer.Option(help="Speech2Unit path")
     ] = "utils/speech2unit",
+    confusion: Annotated[
+        str, typer.Option(help="Calculate confusion matrix on emotion")
+    ] = False,
 ):
     import os
 
@@ -252,7 +255,14 @@ def main(
     else:
         if input is None:
             raise RuntimeError("Please provide input through --input option")
-        print(f"WIP...")
+
+        samples = []
+        with open(input, "r") as f:
+            for line in f:
+                samples.append(line)
+
+        agent.forward(samples, confusion)
+
         exit()
 
 

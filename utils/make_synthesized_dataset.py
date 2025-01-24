@@ -117,72 +117,51 @@ def synthesize_ravdess(data_dir):
     return all_samples
 
 
-def synthesize_esd(data_dir):
-    from collections import defaultdict
-    from pathlib import Path
+def synthesize_esd(file_path):
     import json
     from json import JSONDecodeError
 
     all_samples = []
-    samples_per_emo = defaultdict(list)
-    # base_dir = Path(data_dir)
+    # extracted_texts = []
 
-    map_emo = {
-        "Angry": "anger",
-        "Happy": "happiness",
-        "Neutral": "neutral",
-        "Sad": "sadness",
-        "Surprise": "surprise",
+    emotions = {
+        "neutral",
+        "happiness",
+        "sadness",
+        "anger",
+        "fear",
+        "disgust",
+        "surprise",
     }
 
-    all_samples = []
-    samples_per_emo = defaultdict(list)
-    base_dir = Path(data_dir)
+    with open(file_path, "r", encoding="utf-8") as file:
+        for line in file:
+            parts = line.strip().split("\t")
+            if len(parts) >= 2:
+                text = parts[1]
+                for emotion in emotions:
+                    response_str = call_gpt(sample=f"A: <{emotion}> {text}")
+                    try:
+                        response = json.loads(
+                            # response_str.strip("```").split("json")[-1].strip()
+                            response_str.strip()
+                        )
+                    except JSONDecodeError:
+                        print(
+                            f"[{emotion}, {text}] Not a json format: [{response_str.strip()}]"
+                        )
+                        continue
+                    if not verify_response(response):
+                        print(
+                            f"This response for [{emotion}, {text}] is invalid: {response_str.strip()}"
+                        )
+                        continue
 
-    # >> Walk through the dataset directory
-    for speaker_id in os.listdir(data_dir):
-        speaker_path = os.path.join(data_dir, speaker_id)
-        if not os.path.isdir(speaker_path):
-            continue
+                    all_samples.append(response)
 
-        metadata_path = os.path.join(speaker_path, f"{speaker_id}.txt")
-        df = pd.read_csv(
-            metadata_path, sep="\t", header=None, names=["file_id", "text", "emotion"]
-        )
+                # extracted_texts.append(parts[1])
 
-        for idx, row in df.iterrows():
-            transcript = row["text"]
-            emotion = map_emo[row["emotion"].strip()]
-            audio_path = (
-                base_dir / speaker_id / row["emotion"].strip() / f"{row['file_id']}.wav"
-            )
-            all_samples.append(
-                {"audio_path": audio_path, "text": transcript, "emotion": emotion}
-            )
-            samples_per_emo[emotion].append(
-                {"audio_path": audio_path, "text": transcript, "emotion": emotion}
-            )
-
-    # > Print emotion statistics
-    print("\nESD emotion Statistics:")
-    for emotion, sample_list in sorted(samples_per_emo.items()):
-        print(f"    {emotion}: {len(sample_list)} samples")
-
-    # # >> Randomly sample if we have more data than requested
-    # if num_samples < len(all_samples):
-    #     all_samples = random.sample(all_samples, num_samples)
-
-    # >> Format samples for LLM training
-    formatted_samples = []
-    for sample in all_samples:
-        units = s2u(sample["audio_path"], merged=False, downsample=True)
-        formatted_sample = {
-            "prefix": f"Predict emotion of following speech input and transcribe it. The output format should be like this: '<emotion> transcription'. prompt: {units} ",
-            "plain_text": f"<{sample['emotion']}> {sample['text'].strip()}",
-        }
-        formatted_samples.append(formatted_sample)
-
-    return formatted_samples
+    return all_samples
 
 
 def call_gpt(sample):
@@ -268,10 +247,16 @@ def main(
     ravdess_dir: Annotated[
         str, typer.Option(help="Directory path to ravdess dataset")
     ] = None,
+    esd_path: Annotated[str, typer.Option(help="Directory path to ESD dataset")] = None,
 ):
-    samples = synthesize_ravdess(ravdess_dir)
+    # samples = synthesize_ravdess(ravdess_dir)
+    # output_path = (
+    #     "/home/jhwan98/EmoSDS/data/synthesized/unified/ravdess_without_audio.jsonl"
+    # )
+    # save_to_jsonl(samples=samples, output_file=output_path)
+    samples = synthesize_esd(esd_path)
     output_path = (
-        "/home/jhwan98/EmoSDS/data/synthesized/unified/ravdess_without_audio.jsonl"
+        "/home/jhwan98/EmoSDS/data/synthesized/unified/esd_without_audio.jsonl"
     )
     save_to_jsonl(samples=samples, output_file=output_path)
 
@@ -280,3 +265,4 @@ if __name__ == "__main__":
     typer.run(main)
 
 # python3 utils/make_synthesized_dataset.py --ravdess-dir /shared/NAS_SSD/jhl/futureinternet/ravdess_audio
+# python3 utils/make_synthesized_dataset.py --esd-path /home/jhwan98/EmoSDS/data/synthesized/unified/esd_texts.txt
