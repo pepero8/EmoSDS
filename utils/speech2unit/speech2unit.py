@@ -69,12 +69,17 @@ class Speech2UnitCustom(torch.nn.Module):
         super().__init__()
 
         encoder_name = "patrickvonplaten/wavlm-libri-clean-100h-large"
-        km_path = os.path.join(ckpt_dir, "LibriSpeech_wavlm_k1000_L12.pt")
+        km_path = os.path.join(
+            ckpt_dir,
+            "LibriSpeech100-360-500_wavlm_k1000_L6.pt",
+            # "LibriSpeech100-360-500_wavlm_k2000_L7.pt",
+        )
 
         processor, wavlm, kmeans = load_models(
             wavlm_model_name=encoder_name, kmeans_path=km_path
         )
 
+        self.layer_num = 6
         self.processor = processor
         self.wavlm = wavlm
         self.kmeans = kmeans
@@ -93,14 +98,26 @@ class Speech2UnitCustom(torch.nn.Module):
                 count = 1
         return dup_cluster_list, duration_list
 
+    @staticmethod
+    def downsample(cluster_ids):
+        downsampled_clusters = cluster_ids[::4]
+        duration_list = [4] * len(downsampled_clusters)
+        # Handle the last segment if total length is not divisible by 4
+        if len(cluster_ids) % 4 != 0:
+            duration_list[-1] = len(cluster_ids) % 4
+        return downsampled_clusters, duration_list
+
     def extract_wavlm_features(
         self,
         audio_path,
-        layer_num=12,
+        layer_num=None,
         device="cuda" if torch.cuda.is_available() else "cpu",
     ):
         self.wavlm = self.wavlm.to(device)
         self.wavlm.eval()
+
+        if layer_num is None:
+            layer_num = self.layer_num
 
         waveform, sample_rate = torchaudio.load(audio_path)
 
@@ -140,23 +157,29 @@ class Speech2UnitCustom(torch.nn.Module):
 
         return features.cpu().numpy()
 
-    def __call__(self, path, merged=True):
+    def __call__(self, path, merged=True, downsample=False):
 
         features = self.extract_wavlm_features(path)
         cluster_ids = self.kmeans(features).tolist()
-        dup_cluster_list, duration_list = self.merge_duplicates(cluster_ids)
-
-        merged_units = (
-            "<sosp>" + "".join([f"<{str(x)}>" for x in dup_cluster_list]) + "<eosp>"
-        )
-        unmerged_units = (
-            "<sosp>" + "".join([f"<{str(x)}>" for x in cluster_ids]) + "<eosp>"
-        )
 
         if merged:
-            return merged_units
-        else:
-            return unmerged_units
+            new_cluster_list, duration_list = self.merge_duplicates(cluster_ids)
+        elif downsample:
+            new_cluster_list, duration_list = self.downsample(cluster_ids)
+
+        # merged_units = (
+        #     "<sosp>" + "".join([f"<{str(x)}>" for x in dup_cluster_list]) + "<eosp>"
+        # )
+        units = "<sosp>" + "".join([f"<{str(x)}>" for x in new_cluster_list]) + "<eosp>"
+        # unmerged_units = (
+        #     "<sosp>" + "".join([f"<{str(x)}>" for x in cluster_ids]) + "<eosp>"
+        # )
+
+        # if merged:
+        #     return merged_units
+        # else:
+        #     return unmerged_units
+        return units
 
 
 if __name__ == "__main__":

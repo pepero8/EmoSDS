@@ -1,0 +1,32 @@
+emotion distribution in train samples:
+    anger: 127 samples
+    disgust: 43 samples
+    fear: 10 samples
+    happiness: 320 samples
+    neutral: 321 samples
+    sadness: 244 samples
+    surprise: 320 samples
+
+emotion distribution in valid samples:
+    anger: 14 samples
+    disgust: 14 samples
+    fear: 2 samples
+    happiness: 15 samples
+    neutral: 15 samples
+    sadness: 14 samples
+    surprise: 14 samples
+
+emotion distribution in test samples:
+    anger: 3 samples
+    disgust: 3 samples
+    fear: 3 samples
+    happiness: 3 samples
+    neutral: 3 samples
+    sadness: 3 samples
+    surprise: 3 samples
+
+Total train samples saved to data/unified_task_dailytalk_train_balanced.jsonl: 1385
+
+Total test samples saved to data/unified_task_dailytalk_test_balanced.jsonl: 21
+
+Total valid samples saved to data/unified_task_dailytalk_valid_balanced.jsonl: 88

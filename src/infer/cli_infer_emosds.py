@@ -40,7 +40,7 @@ Here's the prompt:\n\n"""
 DEFAULT_GEN_PARAMS = {
     "max_new_tokens": 4096,
     "min_new_tokens": 10,
-    "temperature": 0.05,
+    "temperature": 0.6,
     "do_sample": True,
     "top_k": 60,
     "top_p": 0.9,
@@ -113,7 +113,9 @@ class EmoSDSInference:
                 ".flac",
                 ".mp4",
             ]:
-                processed_parts.append("Input: " + self.s2u(part.strip(), merged=True))
+                processed_parts.append(
+                    "Input: " + self.s2u(part.strip(), merged=False, downsample=True)
+                )
             else:
                 processed_parts.append(part)
 
@@ -227,6 +229,10 @@ class EmoSDSInference:
 def main(
     model_path: Annotated[str, typer.Option(help="EmoSDS checkpoint path")],
     output_dir: Annotated[str, typer.Option(help="Path to save generated output")],
+    interact: Annotated[
+        bool, typer.Option(help="Whether to enable turn taking inference")
+    ],
+    input: Annotated[str, typer.Option(help="Path to inference input file")] = None,
     s2u_dir: Annotated[
         str, typer.Option(help="Speech2Unit path")
     ] = "utils/speech2unit",
@@ -241,7 +247,13 @@ def main(
         output_dir,
     )
 
-    agent.interact()
+    if interact:
+        agent.interact()
+    else:
+        if input is None:
+            raise RuntimeError("Please provide input through --input option")
+        print(f"WIP...")
+        exit()
 
 
 if __name__ == "__main__":

@@ -32,6 +32,12 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     data_path: str = field(default="", metadata={"help": "Path to the training data."})
+    val_data_path: str = field(
+        default=None, metadata={"help": "Path to the validation data"}
+    )
+    test_data_path: str = field(
+        default=None, metadata={"help": "Path to the test data"}
+    )
     prompt_template_name: str = field(
         default="alpaca",
         metadata={"help": "prompt_template_name"},
@@ -108,6 +114,9 @@ class TrainingArguments(transformers.TrainingArguments):
     train_task: str = field(
         default=None, metadata={"help": "task to train. Options: ['asr', 'unified']"}
     )
+    # do_test: bool = field(
+    #     default=False, metadata={"help": "whether to perform test or not"}
+    # )
 
 
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
@@ -196,21 +205,23 @@ def train():
     def build_styles_dict(style_tokens):
         dict = {}
         for i, style in enumerate(style_tokens):
-            dict[style] = i
+            dict[style.split(">")[0].split("<")[-1]] = i
+
+        print(f"Style dictionary: {dict}")
         return dict
 
     # >> Extend vocab for speech units
     style_tokens = []
     valid_styles = {}
-    if training_args.train_task == "unified":
+    if training_args.train_task in ["unified", "asr+ser"]:
         style_tokens = data_args.style_token_list.split()
         valid_styles = build_styles_dict(style_tokens)
     if "<sosp>" not in tokenizer.get_vocab():
         units_size = 1000
-        logger.info(f"Add special unit tokens <0>-<{units_size-1} to tokenizer.vocab")
+        logger.info(f"Add special unit tokens <0>-<{units_size-1}> to tokenizer.vocab")
         new_tokens = [f"<{x}>" for x in range(units_size)] + ["<sosp>", "<eosp>"]
         tokenizer.add_tokens(new_tokens)
-        if training_args.train_task == "unified":
+        if training_args.train_task in ["unified", "asr+ser"]:
             logger.info(f"Add style tokens to tokenizer.vocab")
             tokenizer.add_tokens(style_tokens)
     for token in ["<sosp>", "<eosp>"] + style_tokens:
@@ -225,8 +236,21 @@ def train():
 
     if model_args.train_embeddings:
         logger.info("only update embedding parameters")
+        layers_to_train = [
+            f"model.layers.0",
+            f"model.layers.1",
+            f"model.layers.2",
+            f"model.layers.3",
+            f"model.layers.4",
+            f"model.layers.5",
+        ]
         for name, param in model.named_parameters():
-            if "embed" not in name:
+            # print(f"    {name}")
+            for layer_to_train in layers_to_train:
+                if layer_to_train in name:
+                    break
+            if "embed" not in name and "lm_head" not in name:
+                logger.info(f"freezing {name}")
                 param.requires_grad = False
 
     def tokenize(prompt, add_eos_token=True):
@@ -275,6 +299,22 @@ def train():
     else:
         data = load_dataset(data_args.data_path)
 
+    if data_args.val_data_path is not None and (
+        data_args.val_data_path.endswith(".json")
+        or data_args.val_data_path.endswith(".jsonl")
+    ):
+        valid_data = load_dataset("json", data_files=data_args.val_data_path)
+    else:
+        valid_data = None
+
+    if data_args.test_data_path is not None and (
+        data_args.test_data_path.endswith(".json")
+        or data_args.test_data_path.endswith(".jsonl")
+    ):
+        _test_data = load_dataset("json", data_files=data_args.test_data_path)
+    else:
+        _test_data = None
+
     if training_args.val_set_size > 0:
         train_val = data["train"].train_test_split(
             test_size=training_args.val_set_size, shuffle=True, seed=42
@@ -289,6 +329,21 @@ def train():
         train_data = train_val_data["train"]
         val_data = train_val_data["test"]
 
+    elif valid_data is not None:
+        train_data = data["train"].map(
+            generate_and_tokenize_prompt,
+            batched=False,
+            num_proc=training_args.preprocessing_num_workers,
+            load_from_cache_file=True,
+            desc=f"generate_and_tokenize_prompt",
+        )
+        val_data = valid_data["train"].map(
+            generate_and_tokenize_prompt,
+            batched=False,
+            num_proc=training_args.preprocessing_num_workers,
+            load_from_cache_file=True,
+            desc=f"generate_and_tokenize_prompt_valid",
+        )
     else:
         train_data = data["train"].map(
             generate_and_tokenize_prompt,
@@ -298,6 +353,17 @@ def train():
             desc=f"generate_and_tokenize_prompt",
         )
         val_data = None
+
+    if _test_data is not None:
+        test_data = _test_data["train"].map(
+            generate_and_tokenize_prompt,
+            batched=False,
+            num_proc=training_args.preprocessing_num_workers,
+            load_from_cache_file=True,
+            desc=f"generate_and_tokenize_prompt_test",
+        )
+    else:
+        test_data = None
 
     data_collator = DataCollatorForSeq2Seq(
         tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
@@ -318,10 +384,23 @@ def train():
 
         return preds, labels
 
-    def extract_parts(text: str) -> Tuple[str, str, str, str]:
+    def extract_parts(text: str, task: str = None) -> Tuple[str, str, str, str]:
         """Extract different parts from the structured text.
         input text does not include prefix(-100 parts)
         """
+
+        if task == "asr+ser":
+            try:
+                style = text.split(">")[0].split("<")[1].strip()
+                transcription = text.split(">")[1].strip()
+            except IndexError:
+                logger.warning(f"there's odd text: {text}")
+                style = text.split(">")[0].strip()
+                transcription = text.split(">")[1].strip()
+            except:
+                raise Exception(f"I can't handle this: {text}")
+
+            return style, transcription
 
         try:
             cur_style = text.split(">")[0].split("<")[1].strip()
@@ -346,6 +425,7 @@ def train():
 
         import evaluate
         import numpy as np
+        from collections import defaultdict
 
         bleu_metric = evaluate.load("sacrebleu")
         bertscore = evaluate.load("bertscore")
@@ -363,7 +443,8 @@ def train():
         # > Create masked predictions array
         masked_preds = []
         for pred_seq, label_seq in zip(preds, labels):
-            if training_args.train_task == "unified":
+            if training_args.train_task in ["unified", "asr+ser"]:
+                # if training_args.train_task in ["unified"]:
                 label_seq = np.roll(
                     label_seq, -1
                 )  # 이거 안해주면 style 토큰이 제대로 추출되지 않음
@@ -397,26 +478,97 @@ def train():
 
         result = {}
         if training_args.train_task == "asr":
-            bleu_results = bleu_metric.compute(
-                predictions=decoded_preds,
-                references=[[label] for label in decoded_labels],
-            )
-            bertscore_results = bertscore.compute(
-                predictions=decoded_preds,
-                references=[[label] for label in decoded_labels],
-                lang="en",
-            )
+            # bleu_results = bleu_metric.compute(
+            #     predictions=decoded_preds,
+            #     references=[[label] for label in decoded_labels],
+            # )
+            # bertscore_results = bertscore.compute(
+            #     predictions=decoded_preds,
+            #     references=[[label] for label in decoded_labels],
+            #     lang="en",
+            # )
             wer_score = wer_metric.compute(
                 predictions=decoded_preds, references=decoded_labels
             )
 
             result = {
-                "bleu": bleu_results["score"],
-                "bertscore_f1": (
-                    sum(bertscore_results["f1"]) / len(bertscore_results["f1"])
-                )
-                * 100,
-                "wer": wer_score * 100,  # Convert to percentage
+                # "bleu": bleu_results["score"],
+                # "bertscore_f1": (
+                #     sum(bertscore_results["f1"]) / len(bertscore_results["f1"])
+                # )
+                # * 100,
+                "wer": wer_score
+                * 100,  # Convert to percentage
+            }
+
+        elif training_args.train_task == "asr+ser":
+            # > Extract parts from predictions
+            styles_preds, texts_preds = [], []
+
+            for pred in decoded_preds:
+                style, text = extract_parts(pred, task="asr+ser")
+
+                # > Convert to lowercase for matching
+                style = style.lower()
+
+                # > Map to indices and validate
+                style_idx = valid_styles.get(style, -1)
+
+                styles_preds.append(style_idx)
+                texts_preds.append(text)
+
+            # > Extract parts from labels
+            styles_labels, texts_labels = [], []
+
+            for i, label in enumerate(decoded_labels):
+                style, text = extract_parts(label, task="asr+ser")
+
+                # > Convert to lowercase for matching
+                style = style.lower()
+
+                # > Map to indices and validate
+                style_idx = valid_styles.get(style, -1)
+
+                styles_labels.append(style_idx)
+                texts_labels.append(text)
+
+            # > for Per-class prediction tracking
+            per_class_correct = defaultdict(int)
+            per_class_total = defaultdict(int)
+
+            valid_styles_rev = dict(zip(valid_styles.values(), valid_styles.keys()))
+
+            # > calculate per-emotion class accuracy for style
+            for pred, label in zip(styles_preds, styles_labels):
+                per_class_total[valid_styles_rev[label]] += 1
+                if pred == label:
+                    per_class_correct[valid_styles_rev[label]] += 1
+
+            per_class_acc = {}
+            total_class_acc = 0
+            num_classes = 0
+
+            for style in valid_styles.keys():
+                if per_class_total[style] > 0:
+                    accuracy = (per_class_correct[style] / per_class_total[style]) * 100
+                    per_class_acc[f"style_acc_{style}"] = accuracy
+                    total_class_acc += accuracy
+                    num_classes += 1
+
+            # > Calculate unweighted average accuracy
+            unweighted_accuracy = (
+                total_class_acc / num_classes if num_classes > 0 else 0
+            )
+
+            # > Calculate WER
+            wer_text = wer_metric.compute(
+                predictions=texts_preds, references=texts_labels
+            )
+
+            result = {
+                "wer_text": wer_text * 100,
+                "style_UA": unweighted_accuracy,
+                **per_class_acc,
             }
 
         elif training_args.train_task == "unified":
@@ -433,7 +585,7 @@ def train():
                 [],
             )
 
-            # Style validation counters
+            # > Style validation counters
             valid_cur_style_count = 0
             valid_response_style_count = 0
             total_count = 0
@@ -496,6 +648,58 @@ def train():
                 valid_response_style_count / total_count
             ) * 100
 
+            # > for Per-class prediction tracking
+            cur_per_class_correct = defaultdict(int)
+            cur_per_class_total = defaultdict(int)
+            res_per_class_correct = defaultdict(int)
+            res_per_class_total = defaultdict(int)
+
+            valid_styles_rev = dict(zip(valid_styles.values(), valid_styles.keys()))
+
+            # > calculate per-emotion class accuracy for current style
+            for pred, label in zip(cur_styles_preds, cur_styles_labels):
+                cur_per_class_total[valid_styles_rev[label]] += 1
+                if pred == label:
+                    cur_per_class_correct[valid_styles_rev[label]] += 1
+
+            # > calculate per-emotion class accuracy for response style
+            for pred, label in zip(response_styles_preds, response_styles_labels):
+                res_per_class_total[valid_styles_rev[label]] += 1
+                if pred == label:
+                    res_per_class_correct[valid_styles_rev[label]] += 1
+
+            cur_per_class_acc = {}
+            cur_total_class_acc = 0
+            cur_num_classes = 0
+            res_per_class_acc = {}
+            res_total_class_acc = 0
+            res_num_classes = 0
+
+            for style in valid_styles.keys():
+                if cur_per_class_total[style] > 0:
+                    cur_accuracy = (
+                        cur_per_class_correct[style] / cur_per_class_total[style]
+                    ) * 100
+                    cur_per_class_acc[f"cur_style_acc_{style}"] = cur_accuracy
+                    cur_total_class_acc += cur_accuracy
+                    cur_num_classes += 1
+
+                if res_per_class_total[style] > 0:
+                    res_accuracy = (
+                        res_per_class_correct[style] / res_per_class_total[style]
+                    ) * 100
+                    res_per_class_acc[f"res_style_acc_{style}"] = res_accuracy
+                    res_total_class_acc += res_accuracy
+                    res_num_classes += 1
+
+            # > Calculate unweighted average accuracy
+            cur_unweighted_accuracy = (
+                cur_total_class_acc / cur_num_classes if cur_num_classes > 0 else 0
+            )
+            res_unweighted_accuracy = (
+                res_total_class_acc / res_num_classes if res_num_classes > 0 else 0
+            )
+
             acc_results_cur_style = acc_metric.compute(
                 predictions=cur_styles_preds,
                 references=cur_styles_labels,
@@ -537,6 +741,10 @@ def train():
                 * 100,
                 "valid_cur_style_percentage": cur_style_valid_percentage,
                 "valid_response_style_percentage": response_style_valid_percentage,
+                "cur_style_UA": cur_unweighted_accuracy,
+                "res_style_UA": res_unweighted_accuracy,
+                **cur_per_class_acc,
+                **res_per_class_acc,
             }
 
         return result
@@ -555,7 +763,7 @@ def train():
         logger.info(f"Set initial global step={training_args.initial_global_step}")
         trainer.state.global_step = training_args.initial_global_step
 
-    # Training
+    # > Training
     if training_args.do_train:
         checkpoint = None
         if training_args.resume_from_checkpoint is not None:
@@ -579,7 +787,7 @@ def train():
             trainer=trainer, output_dir=training_args.output_dir
         )
 
-    # Evaluation
+    # > Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
@@ -602,6 +810,44 @@ def train():
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+    # Test
+    if training_args.do_predict and test_data is not None:
+        logger.info("*** Test ***")
+
+        metrics = trainer.predict(
+            test_dataset=test_data,
+            # ! ignore_keys를 넣을 경우 에러가 뜸
+            # ignore_keys=[
+            #     "bleu_cur_text",
+            #     "loss",
+            #     "model_preparation_time",
+            #     "runtime",
+            #     "samples",
+            #     "samples_per_second",
+            #     "steps_per_second",
+            #     "valid_cur_style_percentage",
+            #     "valid_response_style_percentage",
+            # ],
+        ).metrics
+
+        # max_test_samples = (
+        #     data_args.max_test_samples
+        #     if data_args.max_test_samples is not None
+        #     else len(test_data)
+        # )
+        # metrics["test_samples"] = min(max_test_samples, len(test_data))
+
+        import math
+
+        try:
+            perplexity = math.exp(metrics["test_loss"])
+        except OverflowError:
+            perplexity = float("inf")
+        metrics["perplexity"] = perplexity
+
+        trainer.log_metrics("test", metrics)
+        trainer.save_metrics("test", metrics)
 
 
 if __name__ == "__main__":

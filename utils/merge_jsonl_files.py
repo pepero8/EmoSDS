@@ -36,7 +36,7 @@ def merge_jsonl_files(input_file1, input_file2, output_file):
                         print(
                             f"Warning: Skipping invalid JSON line in {input_file2}: {e}"
                         )
-    except e:
+    except RuntimeError as e:
         print(e)
 
 
