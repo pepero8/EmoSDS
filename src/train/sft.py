@@ -236,20 +236,28 @@ def train():
 
     if model_args.train_embeddings:
         logger.info("only update embedding parameters")
-        layers_to_train = [
-            f"model.layers.0",
-            f"model.layers.1",
-            f"model.layers.2",
-            f"model.layers.3",
-            f"model.layers.4",
-            f"model.layers.5",
-        ]
+        # layers_to_train = [
+        #     f"model.layers.0",
+        #     f"model.layers.1",
+        #     f"model.layers.2",
+        #     f"model.layers.3",
+        #     f"model.layers.4",
+        #     f"model.layers.5",
+        # ]
         for name, param in model.named_parameters():
             # print(f"    {name}")
-            for layer_to_train in layers_to_train:
-                if layer_to_train in name:
-                    break
-            if "embed" not in name and "lm_head" not in name:
+            if (
+                f"model.layers.0." in name
+                or f"model.layers.1." in name
+                or f"model.layers.2." in name
+                or f"model.layers.3." in name
+                or f"model.layers.4." in name
+                or f"model.layers.5." in name
+            ):
+                continue
+            if "embed" in name or "lm_head" in name:
+                continue
+            else:
                 logger.info(f"freezing {name}")
                 param.requires_grad = False
 
