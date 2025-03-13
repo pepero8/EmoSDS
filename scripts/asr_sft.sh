@@ -2,8 +2,9 @@
 
 # METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
 METAROOT="/home/jhwan98/EmoSDS/SpeechGPT/speechgpt/llama/3_2/3B/Llama-3.2-3B-Instruct"
+# METAROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr_6layer_k256/"
 DATAROOT="data/asr/layer6_k1000_merged"
-OUTROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr_6layer_k1000_merged"
+OUTROOT="/shared/NAS_SSD/jhl/futureinternet/output/for_label_roll_test_asr_6layer_k1000"
 CACHEROOT="${DATAROOT}/cache/"
 
 
@@ -14,7 +15,7 @@ echo "================================= asr fine-tuning ========================
 
 
 # --nproc_per_node를 사용할 gpu 개수로 설정하면 됨
-export CUDA_VISIBLE_DEVICES=1,2
+export CUDA_VISIBLE_DEVICES=0,2
 torchrun \
     --nproc_per_node 2 \
     --standalone \

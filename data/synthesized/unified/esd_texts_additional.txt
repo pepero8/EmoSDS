@@ -1,0 +1,63 @@
+0000_000000	I thought you meant how old are you?	anger
+0000_000000	Story twenty nine a boy and a monkey.	surprise
+0000_000000	please excuse me.	fear
+0000_000000	Your midget wife never can sing a song.	anger
+0000_000000	Hannibal come to see you.	surprise
+0000_000000	Zero four three a silver shilling is journey.	disgust
+0000_000000	Midyear is day, shire year.	disgust
+0000_000000	And we are so thirsty!	surprise
+0000_000000	Tom now let our arrows fly!	neutral
+0000_000000	But I saw you walking.	disgust
+0000_000000	Suppose I take grandmother a fresh vegetable.	sadness
+0000_000000	In my opinion that is a good idea!	neutral
+0000_000000	Aha what i have we here?	happiness
+0000_000000	It's me piglet, help help!	surprise
+0000_000000	This is Jack, the relatives of Tom.	fear
+0000_000000	No, I burst the balloon!	sadness
+0000_000000	No, I burst the balloon!	happiness
+0000_000000	Look out! said Alice.	anger
+0000_000000	I am from towel land.	sadness
+0000_000000	this turn goes to the hill.	surprise
+0000_000000	Cos I know I had some honey.	sadness
+0000_000000	Rare rabbit had a little apron.	sadness
+0000_000000	Rare rabbit had a little apron.	fear
+0000_000000	Can I lodge here tonight?	disgust
+0000_000000	He dreamt them all night.	sadness
+0000_000000	Blackbird, and Jay.	sadness
+0000_000000	it looks much better.	neutral
+0000_000000	He searched through the box.	neutral
+0000_000000	Tom fell with a cloven head.	surprise
+0000_000000	Fresh pain seized Paul's body.	happiness
+0000_000000	Yes, I miss her.	happiness
+0000_000000	I'd shoot myself. a pause.	disgust
+0000_000000	I'd shoot myself. a pause.	fear
+0000_000000	Still you owe it a duty.	disgust
+0000_000000	What am I, I'm a racer, son of god.	neutral
+0000_000000	However, somebody killed something.	fear
+0000_000000	It weighs seven point five kilogram.	neutral
+0000_000000	It weighs seven point five kilogram.	happiness
+0000_000000	But what about this thing, sticky!	sadness
+0000_000000	Your own wife is not at home.	sadness
+0000_000000	Today isn't any other day.	neutral
+0000_000000	Give me your hand or I will cry harder than before.	surprise
+0000_000000	Do you think it's a woozle?	surprise
+0000_000000	I am run off my feet.	surprise
+0000_000000	I am run off my feet.	fear
+0000_000000	I would scoff at these followers.	happiness
+0000_000000	The song is called Ways and Means.	sadness
+0000_000000	The song is called Ways and Means.	happiness
+0000_000000	She said in subdued voice.	disgust
+0000_000000	I've just shot a stag.	surprise
+0000_000000	Chapter eighteen, the return journey.	disgust
+0000_000000	Now I understand.	neutral
+0000_000000	Perhaps you think that is a queer title for this chapter.	surprise
+0000_000000	I am safe back again.	fear
+0000_000000	Father has yellow eyes.	anger
+0000_000000	A thief in the night.	happiness
+0000_000000	She'll be feverish after so much thinking.	anger
+0000_000000	But mom I'm not certain about.	happiness
+0000_000000	So Tom saw night as it were broad daylight.	sadness
+0000_000000	A whirring noise was heard.	surprise
+0000_000000	A whirring noise was heard.	anger
+0000_000000	A whirring noise was heard.	happiness
+0000_000000	What do you think of this question?	sadness

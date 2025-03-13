@@ -143,6 +143,7 @@ def train():
     import sys
     import os
     from typing import Dict, List, Tuple
+    import numpy as np
 
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = (
@@ -212,19 +213,28 @@ def train():
 
     # >> Extend vocab for speech units
     style_tokens = []
+    speaker_tokens = []
     valid_styles = {}
-    if training_args.train_task in ["unified", "asr+ser"]:
+    if training_args.train_task in ["unified", "asr+ser", "asr+ser_splitted"]:
         style_tokens = data_args.style_token_list.split()
         valid_styles = build_styles_dict(style_tokens)
+    if training_args.train_task == "unified":
+        speaker_tokens = ["user: ", "EmoSDS: "]
     if "<sosp>" not in tokenizer.get_vocab():
         units_size = 1000
         logger.info(f"Add special unit tokens <0>-<{units_size-1}> to tokenizer.vocab")
-        new_tokens = [f"<{x}>" for x in range(units_size)] + ["<sosp>", "<eosp>"]
+        new_tokens = [f"<{x}>" for x in range(units_size)] + [
+            "<sosp>",
+            "<eosp>",
+        ]
         tokenizer.add_tokens(new_tokens)
-        if training_args.train_task in ["unified", "asr+ser"]:
+        if training_args.train_task in ["unified", "asr+ser", "asr+ser_splitted"]:
             logger.info(f"Add style tokens to tokenizer.vocab")
             tokenizer.add_tokens(style_tokens)
-    for token in ["<sosp>", "<eosp>"] + style_tokens:
+        if training_args.train_task == "unified":
+            logger.info(f"Add speaker tokens to tokenizer.vocab")
+            tokenizer.add_tokens(speaker_tokens)
+    for token in ["<sosp>", "<eosp>"] + style_tokens + speaker_tokens:
         if token not in tokenizer.get_vocab():
             logger.info(f"Add special unit tokens {token} to tokenizer.vocab")
             tokenizer.add_tokens([token])
@@ -236,14 +246,6 @@ def train():
 
     if model_args.train_embeddings:
         logger.info("only update embedding parameters")
-        # layers_to_train = [
-        #     f"model.layers.0",
-        #     f"model.layers.1",
-        #     f"model.layers.2",
-        #     f"model.layers.3",
-        #     f"model.layers.4",
-        #     f"model.layers.5",
-        # ]
         for name, param in model.named_parameters():
             # print(f"    {name}")
             if (
@@ -253,6 +255,10 @@ def train():
                 or f"model.layers.3." in name
                 or f"model.layers.4." in name
                 or f"model.layers.5." in name
+                # or f"model.layers.6." in name
+                # or f"model.layers.7." in name
+                # or f"model.layers.8." in name
+                # or f"model.layers.9." in name
             ):
                 continue
             if "embed" in name or "lm_head" in name:
@@ -397,6 +403,16 @@ def train():
         input text does not include prefix(-100 parts)
         """
 
+        if task == "asr+ser_splitted":
+            try:
+                style = text.split(">")[0].split("<")[1].strip()
+                return "ser", style
+            except IndexError:
+                transcription = text.strip()
+                return "asr", transcription
+            except:
+                raise Exception(f"I can't handle this: {text}")
+
         if task == "asr+ser":
             try:
                 style = text.split(">")[0].split("<")[1].strip()
@@ -411,11 +427,13 @@ def train():
             return style, transcription
 
         try:
-            cur_style = text.split(">")[0].split("<")[1].strip()
+            cur_style = text.split(">")[0].split("<")[-1].strip()
 
-            cur_text = text.split(">")[1].split("Answer:")[0].strip()
+            cur_text = (
+                text.split(">")[1].split("EmoSDS:")[0].strip()
+            )  # asr없는 unified를 위해 잠시 주석처리
 
-            after_answer = text.split("Answer:")[1].strip()
+            after_answer = text.split("EmoSDS:")[1].strip()
             response_style = after_answer[
                 after_answer.find("<") + 1 : after_answer.find(">")
             ].strip()
@@ -426,7 +444,12 @@ def train():
         if response_text == "":
             raise Exception(f"[{text}]")
 
-        return cur_style, cur_text, response_style, response_text
+        return (
+            cur_style,
+            cur_text,  # asr없는 unified를 위해 잠시 주석처리
+            response_style,
+            response_text,
+        )
 
     def compute_metrics(eval_preds) -> Dict:
         """Compute BLEU, BERT score, WER"""
@@ -437,8 +460,12 @@ def train():
 
         bleu_metric = evaluate.load("sacrebleu")
         bertscore = evaluate.load("bertscore")
+        rouge = evaluate.load("rouge")
+        meteor = evaluate.load("meteor")
         wer_metric = evaluate.load("wer")
+        cer_metric = evaluate.load("cer")
         acc_metric = evaluate.load("accuracy")
+        f1_metric = evaluate.load("f1")
 
         preds, labels = eval_preds
         preds = np.array(preds)
@@ -451,14 +478,19 @@ def train():
         # > Create masked predictions array
         masked_preds = []
         for pred_seq, label_seq in zip(preds, labels):
-            if training_args.train_task in ["unified", "asr+ser"]:
+            if training_args.train_task in [
+                "unified",
+                "asr+ser",
+                "asr+ser_splitted",
+                "asr",
+            ]:
                 # if training_args.train_task in ["unified"]:
                 label_seq = np.roll(
                     label_seq, -1
                 )  # 이거 안해주면 style 토큰이 제대로 추출되지 않음
 
             # > Get indices where labels are not -100
-            valid_indices = label_seq != -100
+            valid_indices = label_seq != -100  # numpy array라서 가능
 
             # > Keep only the tokens at valid positions
             masked_pred = pred_seq[valid_indices]
@@ -498,6 +530,9 @@ def train():
             wer_score = wer_metric.compute(
                 predictions=decoded_preds, references=decoded_labels
             )
+            cer_score = cer_metric.compute(
+                predictions=decoded_preds, references=decoded_labels
+            )
 
             result = {
                 # "bleu": bleu_results["score"],
@@ -505,10 +540,9 @@ def train():
                 #     sum(bertscore_results["f1"]) / len(bertscore_results["f1"])
                 # )
                 # * 100,
-                "wer": wer_score
-                * 100,  # Convert to percentage
+                "wer": wer_score * 100,  # Convert to percentage
+                "cer": cer_score * 100,
             }
-
         elif training_args.train_task == "asr+ser":
             # > Extract parts from predictions
             styles_preds, texts_preds = [], []
@@ -523,6 +557,7 @@ def train():
                 style_idx = valid_styles.get(style, -1)
 
                 styles_preds.append(style_idx)
+                # styles_preds.append(style)
                 texts_preds.append(text)
 
             # > Extract parts from labels
@@ -538,6 +573,7 @@ def train():
                 style_idx = valid_styles.get(style, -1)
 
                 styles_labels.append(style_idx)
+                # styles_labels.append(style)
                 texts_labels.append(text)
 
             # > for Per-class prediction tracking
@@ -568,17 +604,135 @@ def train():
                 total_class_acc / num_classes if num_classes > 0 else 0
             )
 
+            # style_bleu = bleu_metric.compute(
+            #     predictions=styles_preds,
+            #     references=[[label] for label in styles_labels],
+            # )
+
             # > Calculate WER
             wer_text = wer_metric.compute(
                 predictions=texts_preds, references=texts_labels
             )
+            # wer_style = wer_metric.compute(
+            #     predictions=styles_preds, references=styles_labels
+            # )
+
+            cer_text = cer_metric.compute(
+                predictions=texts_preds, references=texts_labels
+            )
+            # cer_style = cer_metric.compute(
+            #     predictions=styles_preds, references=styles_labels
+            # )
+            f1 = f1_metric.compute(
+                predictions=cur_styles_preds,
+                references=cur_styles_labels,
+                average="weighted",
+            )
 
             result = {
                 "wer_text": wer_text * 100,
+                # "wer_style": wer_style * 100,
+                "cer_text": cer_text * 100,
+                # "cer_style": cer_style * 100,
+                "style_UA": unweighted_accuracy,
+                "style_f1": f1["f1"] * 100,
+                **per_class_acc,
+            }
+        elif training_args.train_task == "asr+ser_splitted":
+            # > Extract parts from predictions
+            styles_preds, texts_preds = [], []
+
+            for pred in decoded_preds:
+                task, output = extract_parts(pred, task="asr+ser_splitted")
+
+                if task == "ser":
+
+                    # > Convert to lowercase for matching
+                    output = output.lower()
+
+                    # > Map to indices and validate
+                    style_idx = valid_styles.get(output, -1)
+
+                    styles_preds.append(style_idx)
+
+                elif task == "asr":
+                    texts_preds.append(output)
+
+            # > Extract parts from labels
+            styles_labels, texts_labels = [], []
+
+            for i, label in enumerate(decoded_labels):
+                task, output = extract_parts(label, task="asr+ser_splitted")
+
+                if task == "ser":
+
+                    # > Convert to lowercase for matching
+                    output = output.lower()
+
+                    # > Map to indices and validate
+                    style_idx = valid_styles.get(output, -1)
+
+                    styles_labels.append(style_idx)
+
+                elif task == "asr":
+                    texts_labels.append(output)
+
+            # > for Per-class emotion prediction tracking
+            per_class_correct = defaultdict(int)
+            per_class_total = defaultdict(int)
+
+            valid_styles_rev = dict(zip(valid_styles.values(), valid_styles.keys()))
+
+            # > calculate per-emotion class accuracy for style
+            for pred, label in zip(styles_preds, styles_labels):
+                per_class_total[valid_styles_rev[label]] += 1
+                if pred == label:
+                    per_class_correct[valid_styles_rev[label]] += 1
+
+            per_class_acc = {}
+            total_class_acc = 0
+            num_classes = 0
+
+            for style in valid_styles.keys():
+                if per_class_total[style] > 0:
+                    accuracy = (per_class_correct[style] / per_class_total[style]) * 100
+                    per_class_acc[f"style_acc_{style}"] = accuracy
+                    total_class_acc += accuracy
+                    num_classes += 1
+
+            # > Calculate unweighted average accuracy
+            unweighted_accuracy = (
+                total_class_acc / num_classes if num_classes > 0 else 0
+            )
+
+            # style_bleu = bleu_metric.compute(
+            #     predictions=styles_preds,
+            #     references=[[label] for label in styles_labels],
+            # )
+
+            # > Calculate WER
+            wer_text = wer_metric.compute(
+                predictions=texts_preds, references=texts_labels
+            )
+            # wer_style = wer_metric.compute(
+            #     predictions=styles_preds, references=styles_labels
+            # )
+
+            cer_text = cer_metric.compute(
+                predictions=texts_preds, references=texts_labels
+            )
+            # cer_style = cer_metric.compute(
+            #     predictions=styles_preds, references=styles_labels
+            # )
+
+            result = {
+                "wer_text": wer_text * 100,
+                # "wer_style": wer_style * 100,
+                "cer_text": cer_text * 100,
+                # "cer_style": cer_style * 100,
                 "style_UA": unweighted_accuracy,
                 **per_class_acc,
             }
-
         elif training_args.train_task == "unified":
             # > Extract parts from predictions
             (
@@ -600,6 +754,7 @@ def train():
 
             for pred in decoded_preds:
                 cur_style, cur_text, response_style, response_text = extract_parts(pred)
+                # cur_style, response_style, response_text = extract_parts(pred)
 
                 # > Convert to lowercase for matching
                 cur_style = cur_style.lower()
@@ -637,6 +792,7 @@ def train():
                 cur_style, cur_text, response_style, response_text = extract_parts(
                     label
                 )
+                # cur_style, response_style, response_text = extract_parts(label)
 
                 # > Convert to lowercase for matching
                 cur_style = cur_style.lower()
@@ -712,14 +868,24 @@ def train():
                 predictions=cur_styles_preds,
                 references=cur_styles_labels,
             )
+            f1_results_cur_style = f1_metric.compute(
+                predictions=cur_styles_preds,
+                references=cur_styles_labels,
+                average="weighted",
+            )
             acc_results_response_style = acc_metric.compute(
                 predictions=response_styles_preds,
                 references=response_styles_labels,
             )
-            bleu_results_cur_text = bleu_metric.compute(
-                predictions=cur_texts_preds,
-                references=[[label] for label in cur_texts_labels],
+            f1_results_response_style = f1_metric.compute(
+                predictions=response_styles_preds,
+                references=response_styles_labels,
+                average="weighted",
             )
+            # bleu_results_cur_text = bleu_metric.compute(
+            #     predictions=cur_texts_preds,
+            #     references=[[label] for label in cur_texts_labels],
+            # )
             bleu_results_response_text = bleu_metric.compute(
                 predictions=response_texts_preds,
                 references=[[label] for label in response_texts_labels],
@@ -727,7 +893,13 @@ def train():
             wer_cur_text = wer_metric.compute(
                 predictions=cur_texts_preds, references=cur_texts_labels
             )
+            cer_cur_text = cer_metric.compute(
+                predictions=cur_texts_preds, references=cur_texts_labels
+            )
             wer_response_text = wer_metric.compute(
+                predictions=response_texts_preds, references=response_texts_labels
+            )
+            cer_response_text = cer_metric.compute(
                 predictions=response_texts_preds, references=response_texts_labels
             )
             bertscore_results = bertscore.compute(
@@ -735,18 +907,30 @@ def train():
                 references=[[label] for label in response_texts_labels],
                 lang="en",
             )
+            rouge_results = rouge.compute(
+                predictions=response_texts_preds, references=response_texts_labels
+            )
+            meteor_results = meteor.compute(
+                predictions=response_texts_preds, references=response_texts_labels
+            )
 
             result = {
                 "acc_cur_style": acc_results_cur_style["accuracy"] * 100,
+                "weighted_f1_cur_style": f1_results_cur_style["f1"] * 100,
                 "acc_res_style": acc_results_response_style["accuracy"] * 100,
-                "bleu_cur_text": bleu_results_cur_text["score"],
+                "weighted_f1_res_style": f1_results_response_style["f1"] * 100,
+                # "bleu_cur_text": bleu_results_cur_text["score"],
                 "bleu_res_text": bleu_results_response_text["score"],
                 "wer_cur_text": wer_cur_text * 100,
                 "wer_res_text": wer_response_text * 100,
+                "cer_cur_text": cer_cur_text * 100,
+                "cer_res_text": cer_response_text * 100,
                 "bertscore_f1": (
                     sum(bertscore_results["f1"]) / len(bertscore_results["f1"])
                 )
                 * 100,
+                "rouge_L": rouge_results["rougeL"],
+                "meteor": meteor_results["meteor"],
                 "valid_cur_style_percentage": cur_style_valid_percentage,
                 "valid_response_style_percentage": response_style_valid_percentage,
                 "cur_style_UA": cur_unweighted_accuracy,
@@ -756,6 +940,9 @@ def train():
             }
 
         return result
+
+    print(f"training_args.fsdp: {training_args.fsdp}")
+    print(f"training_args.fsdp_config: {training_args.fsdp_config}")
 
     trainer = Trainer(
         model=model,
