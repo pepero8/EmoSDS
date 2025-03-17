@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
-METAROOT="/home/jhwan98/EmoSDS/SpeechGPT/speechgpt/llama/3_2/3B/Llama-3.2-3B-Instruct"
+METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
+# METAROOT="/home/jhwan98/EmoSDS/SpeechGPT/speechgpt/llama/3_2/3B/Llama-3.2-3B-Instruct"
 # METAROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr_6layer_k256/"
-DATAROOT="data/asr/layer6_k1000_merged"
-OUTROOT="/shared/NAS_SSD/jhl/futureinternet/output/for_label_roll_test_asr_6layer_k1000"
+# DATAROOT="data/asr/layer6_k1000_merged"
+DATAROOT="data/asr"
+OUTROOT="./"
 CACHEROOT="${DATAROOT}/cache/"
 
 
@@ -13,8 +14,6 @@ mkdir -p ${CACHEROOT}/tokenized/valid/
 
 echo "================================= asr fine-tuning ================================="
 
-
-# --nproc_per_node를 사용할 gpu 개수로 설정하면 됨
 export CUDA_VISIBLE_DEVICES=0,2
 torchrun \
     --nproc_per_node 2 \
@@ -50,8 +49,5 @@ src/train/sft.py \
     --lr_scheduler_type "cosine" \
     --log_level debug \
     --overwrite_output_dir \
-    --train_embeddings \
-    --logging_steps 1 \
-    --fsdp "full_shard auto_wrap" \
-    --fsdp_transformer_layer_cls_to_wrap 'LlamaDecoderLayer' \
-
+    --train_low_layers \
+    --logging_steps 1

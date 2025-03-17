@@ -14,49 +14,11 @@ def asr_ser_split_data(jsonl_path, train_ratio=0.8, valid_ratio=0.1, test_ratio=
 
     samples_per_emo = defaultdict(list)
 
-    # max_residual_length = 0  # 임시
-    # invalid_res_emos = []  # 임시
-
     with open(jsonl_path, "r") as f:
         for line in f:
             data = json.loads(line.strip())
             plain_text = data["plain_text"]
             emotion = plain_text.split()[0].strip("<>")
-
-            after_answer = plain_text.split("EmoSDS:")[1].strip()
-            res_emotion = after_answer[
-                after_answer.find("<") + 1 : after_answer.find(">")
-            ].strip()
-
-            # 임시
-            # if res_emotion not in [
-            #     "cheerful",
-            #     "friendly",
-            #     "unfriendly",
-            #     "neutral",
-            #     "sad",
-            # ]:
-            # invalid_res_emos.append(res_emotion)  # 임시
-
-            if emotion != "fear" and emotion != "disgust":
-                # samples_per_emo[emotion].append(data)
-                samples_per_emo[res_emotion].append(data)
-
-            # 임시
-            # if max_residual_length < data["residual_length"]:
-            #     max_residual_length = data["residual_length"]
-
-    # print(f"max_residual_length: {max_residual_length}")
-    # print(f"invalid emos: {invalid_res_emos}")  # 임시
-
-    # exit()
-
-    # > Print emotion statistics
-    print("\nASR+SER dataset emotion Statistics:")
-    for emotion, sample_list in sorted(samples_per_emo.items()):
-        print(f"    {emotion}: {len(sample_list)} samples")
-
-    exit()
 
     def extract_balanced_samples(samples_per_emo, total_samples, thres):
         num_samples_per_emotion = total_samples // len(samples_per_emo)
@@ -74,21 +36,18 @@ def asr_ser_split_data(jsonl_path, train_ratio=0.8, valid_ratio=0.1, test_ratio=
                     samples_per_emo[emotion].remove(sample)
                 selected_samples.extend(selected)
             else:
-                # > if we don't have enough, leave #thres samples and take rest
                 selected = random.sample(
                     samples_per_emo[emotion], len(samples_per_emo[emotion]) - thres
                 )
                 for sample in selected:
                     samples_per_emo[emotion].remove(sample)
                 selected_samples.extend(selected)
-                # selected_samples.extend(samples_per_emo[emotion])
-                # samples_per_emo[emotion] = []
 
         return selected_samples
 
-    test_samples = extract_balanced_samples(samples_per_emo, 45, 9)
-    valid_samples = extract_balanced_samples(samples_per_emo, 45, 0)
-    train_samples = extract_balanced_samples(samples_per_emo, 2000, 0)
+    test_samples = extract_balanced_samples(samples_per_emo, 100, 9)
+    valid_samples = extract_balanced_samples(samples_per_emo, 100, 0)
+    train_samples = extract_balanced_samples(samples_per_emo, 20000, 0)
 
     random.shuffle(test_samples)
     random.shuffle(valid_samples)
@@ -249,20 +208,20 @@ def main(
     # # check_split_distribution_splitted_task(valid, "Validation")
     # # check_split_distribution_splitted_task(test, "Test")
 
-    # # output_path_train = f"{out_dir}/asr_ser_task_train_balanced_splitted_task.jsonl"
-    # # output_path_test = f"{out_dir}/asr_ser_task_test_balanced_splitted_task.jsonl"
-    # # output_path_valid = f"{out_dir}/asr_ser_task_valid_balanced_splitted_task.jsonl"
-    # output_path_train = (
-    #     f"{out_dir}/asr_ser_task_train_balanced_dailytalk_newresidual.jsonl"
-    # )
-    # output_path_test = f"{out_dir}/asr_ser_task_test_balanced_dailytalk_newresidual.jsonl"
-    # output_path_valid = (
-    #     f"{out_dir}/asr_ser_task_valid_balanced_dailytalk_newresidual.jsonl"
-    # )
+    # output_path_train = f"{out_dir}/asr_ser_task_train_balanced_splitted_task.jsonl"
+    # output_path_test = f"{out_dir}/asr_ser_task_test_balanced_splitted_task.jsonl"
+    # output_path_valid = f"{out_dir}/asr_ser_task_valid_balanced_splitted_task.jsonl"
+    output_path_train = (
+        f"{out_dir}/asr_ser_task_train_balanced_dailytalk_newresidual.jsonl"
+    )
+    output_path_test = f"{out_dir}/asr_ser_task_test_balanced_dailytalk_newresidual.jsonl"
+    output_path_valid = (
+        f"{out_dir}/asr_ser_task_valid_balanced_dailytalk_newresidual.jsonl"
+    )
 
-    # save_to_jsonl(train, output_path_train)
-    # save_to_jsonl(test, output_path_test)
-    # save_to_jsonl(valid, output_path_valid)
+    save_to_jsonl(train, output_path_train)
+    save_to_jsonl(test, output_path_test)
+    save_to_jsonl(valid, output_path_valid)
 
     # print(f"\nTotal train samples saved to {output_path_train}: {len(train)}")
     # print(f"\nTotal test samples saved to {output_path_test}: {len(test)}")
