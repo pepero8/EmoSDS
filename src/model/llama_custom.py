@@ -29,14 +29,8 @@ class LlamaModelCustom(LlamaModel):
     def process_residual_embeds(
         self, residual_embeds: torch.FloatTensor
     ) -> torch.FloatTensor:
-        """
-        Convert 1024-dim residual embeddings to 3072-dim by replication and cropping
-        """
-        # > Replicate the embeddings 4 times (1024 -> 4096)
-        repeated_embeds = residual_embeds.repeat(1, 1, 4)
-        # > Crop to 3072 dimensions
-        processed_embeds = repeated_embeds[..., :3072]
-        return processed_embeds
+        repeated_embeds = residual_embeds.repeat(1, 1, 3)
+        return repeated_embeds
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     def forward(
@@ -44,7 +38,7 @@ class LlamaModelCustom(LlamaModel):
         input_ids: torch.LongTensor = None,
         residual_embeds: Optional[
             torch.FloatTensor
-        ] = None,  # (batch_size, seq_len, 1024)
+        ] = None,
         residual_id: Optional[torch.Tensor] = None,
         residual_lengths: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
@@ -88,11 +82,6 @@ class LlamaModelCustom(LlamaModel):
             inputs_embeds = self.embed_tokens(input_ids)
 
         if residual_embeds is not None and residual_id is not None:
-            # Verify shapes
-            # if residual_embeds.shape[:-1] != inputs_embeds.shape[:-1]:
-            #     raise ValueError(
-            #         f"residual_embeds shape {residual_embeds.shape} does not match inputs_embeds shape {inputs_embeds.shape}"
-            #     )
             if residual_embeds.shape[-1] != 1024:
                 raise ValueError(
                     f"residual_embeds must have 1024 dimensions, got {residual_embeds.shape[-1]}"
@@ -101,13 +90,7 @@ class LlamaModelCustom(LlamaModel):
 
             residual_id = residual_id.unsqueeze(-1)
             residual_positions = input_ids == residual_id
-            # if len(residual_positions) != residual_embeds.shape[1]:
-            # if len(residual_positions) != residual_length:
-            #     raise ValueError(
-            #         "Mismatch between residual_id sequence length and residual_embeds length"
-            #     )
 
-            # residual_embeds = residual_embeds[:,]
             # > Process residual embeddings to match hidden size
             processed_residuals = self.process_residual_embeds(residual_embeds)
 
@@ -125,21 +108,6 @@ class LlamaModelCustom(LlamaModel):
                 new_inputs_embeds.append(updated_embed)
 
             inputs_embeds = torch.stack(new_inputs_embeds)
-            # inputs_embeds[:, residual_positions, :] = (
-            #     processed_residuals  # Replace embeddings
-            # )
-
-            # # Concat to input embeddings
-            # inputs_embeds = torch.cat(
-            #     [inputs_embeds, processed_residuals], dim=1
-            # )  # shape of inputs_embeds is assumed to be (batch_size, seq_len, hidden_size)
-
-            # # Update attention_mask to account for the additional sequence length
-            # if attention_mask is not None:
-            #     residual_attention = torch.ones_like(
-            #         attention_mask[:, : processed_residuals.size(1)]
-            #     )
-            #     attention_mask = torch.cat([attention_mask, residual_attention], dim=1)
 
         # kept for BC (non `Cache` `past_key_values` inputs)
         return_legacy_cache = False
@@ -261,9 +229,9 @@ class LlamaForCausalLMCustom(LlamaForCausalLM):
         input_ids: torch.LongTensor = None,
         residual_embeds: Optional[
             torch.FloatTensor
-        ] = None,  # (batch_size, seq_len, 1024)
-        residual_id: Optional[torch.Tensor] = None,  # (batch_size,)
-        residual_lengths: Optional[torch.Tensor] = None,  # (batch_size,)
+        ] = None,
+        residual_id: Optional[torch.Tensor] = None,
+        residual_lengths: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
@@ -276,36 +244,6 @@ class LlamaForCausalLMCustom(LlamaForCausalLM):
         cache_position: Optional[torch.LongTensor] = None,
         num_logits_to_keep: int = 0,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        r"""
-        Args:
-            labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-                Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
-                config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
-                (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
-
-            num_logits_to_keep (`int`, *optional*):
-                Calculate logits for the last `num_logits_to_keep` tokens. If `0`, calculate logits for all
-                `input_ids` (special case). Only last token logits are needed for generation, and calculating them only for that
-                token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
-
-        Returns:
-
-        Example:
-
-        ```python
-        >>> from transformers import AutoTokenizer, LlamaForCausalLM
-
-        >>> model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
-        >>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-
-        >>> prompt = "Hey, are you conscious? Can you talk to me?"
-        >>> inputs = tokenizer(prompt, return_tensors="pt")
-
-        >>> # Generate
-        >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
-        >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
-        ```"""
 
         output_attentions = (
             output_attentions
@@ -353,22 +291,16 @@ class LlamaForCausalLMCustom(LlamaForCausalLM):
                 logger.warning_once(
                     "Starting from v4.46, the `logits` model output will have the same type as the model (except at train time, where it will always be FP32)"
                 )
-            # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-            # TODO: remove the float() operation in v4.46
             logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :]).float()
 
         loss = None
         if labels is not None:
-            # Upcast to float if we need to compute the loss to avoid potential precision issues
             logits = logits.float()
-            # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-            # Flatten the tokens
             loss_fct = CrossEntropyLoss()
             shift_logits = shift_logits.view(-1, self.config.vocab_size)
             shift_labels = shift_labels.view(-1)
-            # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
             loss = loss_fct(shift_logits, shift_labels)
 

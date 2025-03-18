@@ -476,6 +476,7 @@ def main(
 ):
     from speech2unit.speech2unit import Speech2UnitCustom
     from asr_ser_split_jsonl_dataset import asr_ser_split_data
+    from diversify_prompt import diversify_prompt
 
     ckpt_dir = "utils/speech2unit/"
     s2u = Speech2UnitCustom(ckpt_dir=ckpt_dir)
@@ -486,12 +487,13 @@ def main(
         if librispeech_dir is not None:
             librispeech_samples = asr_extract_samples_librispeech(librispeech_dir, s2u)
             output_path_librispeech = (
-                "data/asr/asr_task_librispeech.jsonl"
+                "data/asr/asr_task_librispeech_tmp.jsonl"
             )
             save_to_jsonl(librispeech_samples, output_path_librispeech)
             # print(
             #     f"\nLibrispeech samples saved to {output_path_librispeech}: {len(librispeech_samples)}"
             # )
+            diversify_prompt(output_path_librispeech, "data/asr/asr_task_librispeech.jsonl", "data/asr/prompts_for_asr.txt", False)
         else:
             print(
                 "Skipping LibriSpeech dataset. You can provide path through --librispeech-dir option"
@@ -507,13 +509,17 @@ def main(
             )
             save_to_jsonl(esd_samples, output_path_esd)
             train_samples, valid_samples, test_samples = asr_ser_split_data(jsonl_path=output_path_esd)
-            output_path_train = "data/asr_ser/asr_ser_task_esd_train.jsonl"
-            output_path_test = "data/asr_ser/asr_ser_task_esd_test.jsonl"
-            output_path_valid = "data/asr_ser/asr_ser_task_esd_valid.jsonl"
+            output_path_train = "data/asr_ser/asr_ser_task_esd_train_tmp.jsonl"
+            output_path_test = "data/asr_ser/asr_ser_task_esd_test_tmp.jsonl"
+            output_path_valid = "data/asr_ser/asr_ser_task_esd_valid_tmp.jsonl"
 
             save_to_jsonl(train_samples, output_path_train)
             save_to_jsonl(test_samples, output_path_test)
             save_to_jsonl(valid_samples, output_path_valid)
+
+            diversify_prompt(output_path_train, "data/asr_ser/asr_ser_task_esd_train.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
+            diversify_prompt(output_path_test, "data/asr_ser/asr_ser_task_esd_test.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
+            diversify_prompt(output_path_valid, "data/asr_ser/asr_ser_task_esd_valid.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
             # print(f"\nESD samples saved to {output_path_esd}: {len(esd_samples)}")
         else:
             print("Skipping ESD dataset. You can provide path through --esd-dir option")

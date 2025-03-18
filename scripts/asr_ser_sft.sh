@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# METAROOT="path/to/your/stage1/model"
+METAROOT="path/to/your/stage1/model"
 DATAROOT="data/asr_ser"
 OUTROOT="./"
 CACHEROOT="${DATAROOT}/cache/"

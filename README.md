@@ -1,64 +1,64 @@
 # EmoSDS
-EmoSDS: Emotionally Adaptive Spoken dialogue System
+This is repository of EmoSDS: Emotionally Adaptive Spoken dialogue System paper
 
-※ All the codes are derived from SpeechGPT
+## Abstract
+...
 
-## Train results
+## How to train
+Prerequisites:
 
-### After unified fine-tuning(25.1.3) (3 epochs)
+1. python 3.8 env (refer to requirements.txt for all dependencies)
 
-- ex1) "This is input: speechgpt/prompt/weather_465_c_0.wav"
-	<br>
-	```Plain text
-	GT:     [sleepy][depressed]  Oh man, that's a bummer. I was really looking forward to soaking up the sun all day.
-	EmoSDS: [neutral] The forecast said it might rain later though. Answer: [neutral] Well, let\'s hope it holds off until the evening at least. (temp:0.6)
-	EmoSDS: [neutral] The forecast said it might rain later though. Answer: [neutral] Well, let\'s hope it holds off until the evening, fingers crossed. (temp:0.05)
-	```
+2. LlaMA 3.2 3B
 
-- ex2) "This is input: speechgpt/prompt/weather_465_c_2.wav"
-	<br>
-	```Plain text
-	GT:     [friendly][friendly]  Hopefully it'll hold off until the evening. Let's pack some umbrellas just in case and keep our fingers crossed!
-	EmoSDS: [friendly] The forecast said it might rain later though. Answer: [cheerful] Well, let\'s hope it holds off until after our beach time (temp:0.6)
-	EmoSDS: [friendly] The forecast said it might rain later though. Answer: [friendly] Let\'s hope it holds off until the evening, fingers crossed (temp:0.05)
-	```
+	you can download it from: https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct
 
-### After unified fine-tuning(25.1.8) (3 epochs)
+3. pretrained Kmeans model
 
-- ex1) "This is input: speechgpt/prompt/weather_465_c_0.wav"
-	<br>
-	```Plain text
-	GT:     [sleepy][depressed]  Oh man, that's a bummer. I was really looking forward to soaking up the sun all day.
-	EmoSDS: <neutral> The forecast said it might rain later though. Answer: <friendly> Let\'s hope it holds off until the evening, I\'ll plan a picnic for tomorrow. (temp:0.6)
-	EmoSDS: <friendly> The forecast said it might rain later though. Answer: <cheerful> Well, let\'s hope it holds off, fingers crossed (temp:1.0)
-	EmoSDS: <neutral> The forecast said it might rain later though. Answer: <friendly> Let\'s hope it holds off until after our picnic. We could use more sunny days. (temp:0.05)
-	```
+	you can download it from our google drive
 
-- ex2) "This is input: speechgpt/prompt/weather_465_c_2.wav"
-	<br>
-	```Plain text
-	GT:     [friendly][friendly]  Hopefully it'll hold off until the evening. Let's pack some umbrellas just in case and keep our fingers crossed!
-	EmoSDS: <unfriendly> The forecast said it might rain later though. Answer: <friendly> Let\'s hope it holds off until after our picnic. We could use more luck. (temp:0.6)
-	EmoSDS: <unfriendly> The forecast says it might rain later though. Answer: <cheerful> Let\'s hope it holds off until after the picnic. (temp:1.0)
-	EmoSDS: <friendly> The forecast said it might rain later though. Answer: <friendly> Let\'s hope it holds off until after our picnic. We could use more sunny days. (temp:0.05)
-	```
+### Stage 1
+You should download LibriSpeech train-clean-100 dataset
 
-### After unified fine-tuning(25.1.8) (6 epochs)
+```python
+# create stage 1 data
+python3 utils/build_data.py asr --librispeech-dir /path/to/your/librispeech/data
 
-- ex1) "This is input: speechgpt/prompt/weather_465_c_0.wav"
-	<br>
-	```Plain text
-	GT:     [sleepy][depressed]  Oh man, that's a bummer. I was really looking forward to soaking up the sun all day.
-	EmoSDS: <neutral> The forecast did mention it might rain later though. Answer: <friendly> Let\'s hope it holds off until after our picnic (temp:0.6)
-	EmoSDS: <friendly> The forecast did mention it might rain later though. Answer: <friendly> Well, let\'s hope it holds off until after our picnic (temp:1.0)
-	EmoSDS: <neutral> The forecast did mention it might rain later though. Answer: <neutral> Well, let\'s hope it holds off until after our picnic. (temp:0.05)
-	```
+# train
+bash scripts/asr_sft.sh
+```
 
-- ex2) "This is input: speechgpt/prompt/weather_465_c_2.wav"
-	<br>
-	```Plain text
-	GT:     [friendly][friendly]  Hopefully it'll hold off until the evening. Let's pack some umbrellas just in case and keep our fingers crossed!
-	EmoSDS: <neutral> The forecast did mention it might rain later though. Answer: <friendly> Let\'s hope it holds off until after our picnic (temp:0.6)
-	EmoSDS: <friendly> The forecast did it might rain later though. Answer: <friendly> Well, that\'ll give us time to pack as we see. I\'ll need to check my schedule first. (temp:1.0)
-	EmoSDS: <friendly> The forecast did mention it might rain later though. Answer: <friendly> Let\'s hope it holds off until after our picnic (temp:0.05)
-	```
+### Stage 2
+
+Download ESD from [ESD official repository](https://github.com/HLTSingapore/Emotional-Speech-Data).
+
+Download residual files from our google drive
+
+You can download stage 1 model checkpoint from our google drive too.
+
+```python
+# create stage 2 data
+python3 utils/build_data.py asr+ser --esd-dir /path/to/your/ESD/data
+
+# train
+bash scripts/asr_ser_sft.sh # in the script, you should specify checkpoint path in METAROOT variable
+```
+
+### Stage 3
+
+Download synthesized dialogue data from our google drive
+
+You can download stage 2 model checkpoint from our google drive too.
+
+```python
+# create stage 3 data (EmoSC)
+python3 utils/build_data.py unified --esd-dir /path/to/your/ESD/data --esd-syn-path /path/to/dialogue/data
+
+# train
+bash scripts/unified_sft.sh # in the script, you should specify checkpoint path in METAROOT variable
+```
+
+## Acknowledgement
+Portions of the research in this paper used the ESD Database made available by the HLT lab, National University of Singapore, Singapore.
+
+The codes are derived and modified from SpeechGPT
