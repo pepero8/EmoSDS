@@ -1,11 +1,12 @@
 #!/bin/bash
 
-METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
-# METAROOT="/home/jhwan98/EmoSDS/SpeechGPT/speechgpt/llama/3_2/3B/Llama-3.2-3B-Instruct"
+# METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
+METAROOT="/home/jhwan98/EmoSDS/SpeechGPT/speechgpt/llama/3_2/3B/Llama-3.2-3B-Instruct"
 # METAROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr_6layer_k256/"
 # DATAROOT="data/asr/layer6_k1000_merged"
 DATAROOT="data/asr"
-OUTROOT="./"
+# OUTROOT="./"
+OUTROOT="/shared/data_zfs/jhwan/futureinternet/output/asr_test_20250319"
 CACHEROOT="${DATAROOT}/cache/"
 
 
@@ -21,7 +22,7 @@ torchrun \
 src/train/sft.py \
     --train_task "asr" \
     --model_name_or_path "${METAROOT}" \
-    --data_path "${DATAROOT}/asr_task_librispeech.jsonl" \
+    --data_path "${DATAROOT}/asr_task_librispeech_test.jsonl" \
     --val_set_size 100 \
     --cache_dir ${CACHEROOT} \
     --preprocessing_num_workers 10 \
@@ -50,4 +51,4 @@ src/train/sft.py \
     --log_level debug \
     --overwrite_output_dir \
     --train_low_layers \
-    --logging_steps 1
+    --logging_steps 1 \

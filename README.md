@@ -17,6 +17,8 @@ Prerequisites:
 
 	you can download it from our google drive
 
+
+All commands below should be executed at EmoSDS/ working directory
 ### Stage 1
 You should download LibriSpeech train-clean-100 dataset
 

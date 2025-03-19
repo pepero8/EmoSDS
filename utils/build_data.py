@@ -487,13 +487,13 @@ def main(
         if librispeech_dir is not None:
             librispeech_samples = asr_extract_samples_librispeech(librispeech_dir, s2u)
             output_path_librispeech = (
-                "data/asr/asr_task_librispeech_tmp.jsonl"
+                "data/asr/asr_task_librispeech_tmp_test.jsonl"
             )
             save_to_jsonl(librispeech_samples, output_path_librispeech)
             # print(
             #     f"\nLibrispeech samples saved to {output_path_librispeech}: {len(librispeech_samples)}"
             # )
-            diversify_prompt(output_path_librispeech, "data/asr/asr_task_librispeech.jsonl", "data/asr/prompts_for_asr.txt", False)
+            diversify_prompt(output_path_librispeech, "data/asr/asr_task_librispeech_test.jsonl", "data/asr/prompts_for_asr.txt", False)
         else:
             print(
                 "Skipping LibriSpeech dataset. You can provide path through --librispeech-dir option"

@@ -802,6 +802,7 @@ def train():
         elif last_checkpoint is not None:
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        print("finished training")
         metrics = train_result.metrics
 
         max_train_samples = (
