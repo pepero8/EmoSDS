@@ -1,6 +1,8 @@
 # EmoSDS
 This is repository of EmoSDS: Emotionally Adaptive Spoken dialogue System paper
 
+<img width="600" alt="image" src="asset/emosds_only_model_2.png">
+
 ## Abstract
 ...
 
@@ -40,7 +42,7 @@ You can download stage 1 model checkpoint from our google drive too.
 
 ```python
 # create stage 2 data
-python3 utils/build_data.py asr+ser --esd-dir /path/to/your/ESD/data
+python3 utils/build_data.py asr+ser --esd-dir /path/to/your/ESD/data --residual
 
 # train
 bash scripts/asr_ser_sft.sh # in the script, you should specify checkpoint path in METAROOT variable
