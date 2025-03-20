@@ -1,4 +1,5 @@
 # EmoSDS
+
 This is a repository of paper: EmoSDS: Emotionally Adaptive Spoken dialogue System
 
 <img width="600" alt="image" src="asset/emosds_only_model_2.png">
@@ -81,5 +82,3 @@ bash scripts/unified_sft.sh # in the script, you should specify stage 2 checkpoi
 
 ## Acknowledgement
 Portions of the research in this paper used the ESD Database made available by the HLT lab, National University of Singapore, Singapore.
-
-The codes are derived and modified from SpeechGPT
