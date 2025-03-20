@@ -2,44 +2,61 @@ import random
 import typer
 from typing_extensions import Annotated
 
+random.seed(42)
 
-def asr_extract_samples_styletalk(csv_data_path, s2u, num_samples=20000):
-    import pandas as pd
+PREFIX_ASR = "Transcribe following speech input:"
+PREFIX_ASR_SER = "Predict emotion of following speech input and transcribe it. The output format should be like this: '<emotion> transcription'. prompt:"
+# PREFIX_UNIFIED = """
+# # Task
+# From now on, you are an intelligent voice assistant. You need to provide useful, consistent to the dialogue context, emotionally approval natural response to the user's input speech.
+# Given user speech and history, you need to identify the emotion, transcribe the user speech, predict appropriate response emotion, and predict appropriate response text according to the context.
+# Each dialogue turn is formatted as: '{speaker}: <emotion> text'.
+# You must use only 'A' or 'B' for {speaker}.
+# The emotion should be one of following 5 emotions: <anger>, <happiness>, <neutral>, <sadness>, <surprise>
 
-    df = pd.read_csv(csv_data_path)
+# # Examples
+# Following examples show example dialogues with emotion and text. The caption in angle brackets indicate emotion of the transcription.
 
-    # >> Extract required columns and create style combinations
-    audio_style_data = []
-    for _, row in df.iterrows():
-        audio_style_data.append(
-            (
-                row["curr_audio_id"],
-                row["curr_text"].replace("B:", "", 1).strip(),  # remove 'B:' part
-            )
-        )
+# ## Example 1
+# 1. A: <neutral> It just tastes so good, you know?
+# 2. B: <happiness> That's awesome! It's always great to find something you enjoy. Do you use it on anything specific, like toast or cooking?
+# 3. A: <surprise> I can't believe it's not butter!
+# 4. B: <happiness> Oh wow, you're really passionate about this! So, what is it about "I Can't Believe It's Not Butter" that's got you so surprised?
 
-    # >> If requested samples are more than available data, use all data
-    if num_samples > len(audio_style_data):
-        sampled_data = audio_style_data
-    else:
-        sampled_data = random.sample(audio_style_data, num_samples)
+# ## Example 2
+# 1. A: <anger> I can't believe it's not butter!
+# 2. B: <neutral> Whoa, okay, let's take a deep breath and try to calm down. Are you actually upset that it's not butter? What's really going on here?
 
-    # >> Format data for LLM training
-    formatted_samples = []
-    for cur_audio_id, cur_text in sampled_data:
-        units = s2u(f"data/styletalk/audio/{cur_audio_id}")
-        sample = {
-            "prefix": f"Transcribe following speech input: {units} > ",
-            "plain_text": f"{cur_text.strip()}",
-        }
-        formatted_samples.append(sample)
+# ## Example 3
+# 1. A: <neutral> I watched a baseball game on the weekend
+# 2. B: <neutral> Oh cool! how was it?
+# 3. A: <sadness> The game wasn't bad
+# 4. B: <sadness> You don't seem too happy, did your team lose?
 
-    return formatted_samples
+# ## Example 4
+# 1. A: <neutral> I watched a baseball game on the weekend
+# 2. B: <neutral> Oh cool! how was it?
+# 3. A: <happiness> The game wasn't bad
+# 4. B: <happiness> That's great to hear! Did your favorite team win?
+
+# Here's the prompt:
+
+# """
+PREFIX_UNIFIED_NEW = """
+# Task
+From now on, you are an intelligent voice assistant. You need to provide useful, consistent to the dialogue context, emotionally approval natural response to the user's input speech.
+Given user speech and history, you need to identify the emotion, transcribe the user speech, predict appropriate response emotion, and predict appropriate response text according to the context.
+Each dialogue turn is formatted as: '{speaker}: <emotion> text'.
+The emotion should be one of following 5 emotions: <anger>, <happiness>, <neutral>, <sadness>, <surprise>.
+The generated response should vary in emotion and text based on the user's emotion, even if the input text is the same.
+
+Here's the prompt:
+
+"""
 
 
 def asr_extract_samples_librispeech(data_dir, s2u, num_samples=50000):
     import os
-    from pathlib import Path
 
     all_samples = []
 
@@ -83,16 +100,14 @@ def asr_extract_samples_librispeech(data_dir, s2u, num_samples=50000):
                             }
                         )
 
-    # >> Randomly sample if we have more data than requested
     if num_samples < len(all_samples):
         all_samples = random.sample(all_samples, num_samples)
 
-    # >> Format samples for LLM training
     formatted_samples = []
     for sample in all_samples:
-        units = s2u(sample["audio_path"])
+        units = s2u(sample["audio_path"], merged=True)
         formatted_sample = {
-            "prefix": f"Transcribe following speech input: {units} ",
+            "prefix": f"{PREFIX_ASR} {units} ",
             "plain_text": f"{sample['text'].strip()}",
         }
         formatted_samples.append(formatted_sample)
@@ -100,131 +115,336 @@ def asr_extract_samples_librispeech(data_dir, s2u, num_samples=50000):
     return formatted_samples
 
 
-def unified_extract_samples_dailytalk(data_path, s2u, num_samples=100, test_size=0.1):
+def asr_ser_extract_samples_esd(data_dir, s2u, residual=False):
     import os
+    import pandas as pd
     from collections import defaultdict
-    import json
+    from pathlib import Path
 
-    with open(os.path.join(data_path, "metadata.json"), "r") as f:
-        metadata = json.load(f)
+    map_emo = {
+        "Angry": "anger",
+        "Happy": "happiness",
+        "Neutral": "neutral",
+        "Sad": "sadness",
+        "Surprise": "surprise",
+    }
 
-    formatted_samples = []
-    emotion_stats = defaultdict(int)
+    all_samples = []
+    samples_per_emo = defaultdict(list)
+    base_dir = Path(data_dir)
 
-    for dialog_idx in metadata.keys():
-        dialog_data = metadata[dialog_idx]
-        dialog_turns = len(dialog_data)
+    # >> Walk through the dataset directory
+    for speaker_id in os.listdir(data_dir):
+        speaker_path = os.path.join(data_dir, speaker_id)
+        if not os.path.isdir(speaker_path):
+            continue
 
-        dialog_history = {}
-        # >> Process consecutive turns to create current-response pairs
-        for turn_idx in range(dialog_turns - 1):
-            curr_turn = dialog_data[str(turn_idx)]
-            next_turn = dialog_data[str(turn_idx + 1)]
+        metadata_path = os.path.join(speaker_path, f"{speaker_id}.txt")
+        df = pd.read_csv(
+            metadata_path, sep="\t", header=None, names=["file_id", "text", "emotion"]
+        )
 
-            # > Update history
-            if turn_idx > 0:
-                dialog_history[str(turn_idx - 1)] = dialog_data[str(turn_idx - 1)][
-                    "text"
-                ]
-                if len(dialog_history) > 5:
-                    dialog_history.pop(
-                        next(iter(dialog_history))
-                    )  # removes the first element
-
-            curr_emotion = curr_turn["emotion"]
-            resp_emotion = next_turn["emotion"]
-
-            # > Convert "no emotion" to "neutral" for consistency
-            curr_emotion = "neutral" if curr_emotion == "no emotion" else curr_emotion
-            resp_emotion = "neutral" if resp_emotion == "no emotion" else resp_emotion
-
-            emotion_stats[curr_emotion] += 1
-
-            # > Get audio path
-            curr_audio_path = os.path.join(
-                data_path,
-                "data",
-                str(dialog_idx),
-                f"{turn_idx}_{curr_turn['speaker']}_d{dialog_idx}.wav",
+        for idx, row in df.iterrows():
+            transcript = row["text"]
+            emotion = map_emo[row["emotion"].strip()]
+            audio_path = (
+                base_dir / speaker_id / row["emotion"].strip() / f"{row['file_id']}.wav"
+            )
+            all_samples.append(
+                {"audio_path": audio_path, "text": transcript, "emotion": emotion}
+            )
+            samples_per_emo[emotion].append(
+                {"audio_path": audio_path, "text": transcript, "emotion": emotion}
             )
 
-            # > Build history string
-            history = ""
-            if turn_idx > 0:
-                spk_names = ("Answer", "Input")
-                spk_idx = 0
-                for turn, text in reversed(dialog_history.items()):
-                    history = f"{spk_names[spk_idx]}: {text}\n" + history
-                    spk_idx = int(not spk_idx)
+    formatted_samples = []
+    for sample in all_samples:
 
-            if os.path.exists(curr_audio_path):
-                units = s2u(curr_audio_path)
+        if residual:
+            units, residual_length, residual_path = s2u(
+                sample["audio_path"], merged=True, residual=True
+            )
+            formatted_sample = {
+                "prefix": f"{PREFIX_ASR_SER} {units} ",
+                "plain_text": f"<{sample['emotion']}> {sample['text'].strip()}",
+                "residual_length": residual_length,
+                "residual_path": residual_path,
+            }
+        else:
+            units = s2u(sample["audio_path"], merged=True)
+            formatted_sample = {
+                "prefix": f"{PREFIX_ASR_SER} {units} ",
+                "plain_text": f"<{sample['emotion']}> {sample['text'].strip()}",
+            }
 
-                sample = {
-                    "prefix": f"""
-# Task
-From now on, you are an intelligent voice assistant. You need to provide useful, consistent to the dialogue context, emotionally approval natural response to the user's input speech.
-Given user speech and history, you need to transcribe the user speech, identify the speaking style, predict appropriate response style, and predict appropriate response text according to the context.
-The speaking style should be one of following 7 styles: anger, disgust, fear, happiness, neutral, sadness, surprise
+        formatted_samples.append(formatted_sample)
 
-# Examples
-Following examples show example responses to the transcribed input speech with speaking style and history. The caption in angle brackets indicate speaking style of the transcription."
+    return formatted_samples
 
-## Example 1
-Input: It just tastes so good, you know?
-Answer: That's awesome! It's always great to find something you enjoy. Do you use it on anything specific, like toast or cooking?
-Input: <surprise> I can't believe it's not butter!
-Answer: <happiness> Oh wow, you're really passionate about this! So, what is it about "I Can't Believe It's Not Butter" that's got you so surprised?
 
-## Example 2
-Input: <anger> I can't believe it's not butter!
-Answer: <neutral> Whoa, okay, let's take a deep breath and try to calm down. Are you actually upset that it's not butter? What's really going on here?
+def unified_extract_samples_esd(data_path, synthesized_path, s2u, residual=False):
+    import os
+    import json
+    import pandas as pd
+    from collections import defaultdict
+    from pathlib import Path
 
-## Example 3
-Input: I watched a baseball game on the weekend
-Answer: Oh cool! how was it?
-Input: <sadness> The game wasn't bad
-Answer: <sadness> You don't seem too happy, did your team lose?
+    def clean_string(text):
+        import string
+        import unicodedata
+        import re
 
-## Example 4
-Input: I watched a baseball game on the weekend
-Answer: Oh cool! how was it?
-Input: <happiness> The game wasn't bad
-Answer: <happiness> That's great to hear! Did your favorite team win?
+        # > First, normalize Unicode characters to their closest ASCII representation
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ASCII", "ignore").decode("ASCII")
 
-Here's the prompt:
+        # > Remove all punctuation
+        text = text.translate(str.maketrans("", "", string.punctuation))
 
-"""
-                    + f"{history} "
-                    + f"Input: {units} ",
-                    "plain_text": f"<{curr_emotion}> {curr_turn['text'].strip()} Answer: <{resp_emotion}> {next_turn['text'].strip()}",
-                }
+        # > Remove redundant whitespaces between words
+        text = re.sub(r"\s+", " ", text).strip()
 
-                formatted_samples.append(sample)
+        return text
 
-    # > Print emotion statistics
-    print("\nEmotion Statistics:")
-    total_samples = sum(emotion_stats.values())
-    for emotion, count in sorted(emotion_stats.items()):
-        percentage = (count / total_samples) * 100
-        print(f"{emotion}: {count} samples ({percentage:.2f}%)")
+    map_emo = {
+        "Angry": "anger",
+        "Happy": "happiness",
+        "Neutral": "neutral",
+        "Sad": "sadness",
+        "Surprise": "surprise",
+    }
 
-    # > If requested samples are more than available data, use all data
-    if num_samples > len(formatted_samples):
-        pass
-    else:
-        formatted_samples = random.sample(formatted_samples, num_samples)
+    text_dic = {}
 
-    # > Calculate number of samples for test set
-    num_test = int(num_samples * test_size)
-    num_train = num_samples - num_test
+    samples_per_emo = defaultdict(list)
+    formatted_samples = []
 
-    # > Shuffle and split the samples
-    random.shuffle(formatted_samples)
-    train_samples = formatted_samples[:num_train]
-    test_samples = formatted_samples[num_train:]
+    base_dir = Path(data_path)
+    wav_path_dic = defaultdict(list)
 
-    return train_samples, test_samples
+    text_id = 0
+    # >> Walk through the dataset directory
+    for speaker_id in os.listdir(data_path):
+        speaker_path = os.path.join(data_path, speaker_id)
+        if not os.path.isdir(speaker_path):
+            continue
+
+        metadata_path = os.path.join(speaker_path, f"{speaker_id}.txt")
+        df = pd.read_csv(
+            metadata_path, sep="\t", header=None, names=["file_id", "text", "emotion"]
+        )
+
+        for idx, row in df.iterrows():
+            transcript = row["text"].strip()
+            emotion = map_emo[row["emotion"].strip()]
+            audio_path = (
+                base_dir / speaker_id / row["emotion"].strip() / f"{row['file_id']}.wav"
+            )
+            if clean_string(transcript) not in text_dic.keys():
+                text_dic[clean_string(transcript)] = text_id
+                text_id += 1
+
+            wav_path_dic[f"{emotion}_{text_dic[clean_string(transcript)]}"].append(
+                audio_path
+            )
+
+    # >> Walk through the synthesized file
+    with open(synthesized_path, "r") as f:
+        dialog_idx = -1
+        for line in f:
+            dialog_idx += 1
+            try:
+                sample = json.loads(line)
+            except json.JSONDecodeError:
+                raise RuntimeError(f"Error loading dialog_idx: {dialog_idx - 1}")
+            history_list = sample["history_turns"]
+            history = "\n".join(history_list) + "\n"
+            history = history.replace("A: ", "user: ").replace("B: ", "EmoSDS: ")
+
+            cur_emo1 = (
+                sample["current_turn1"].split("A: ")[1].split(">")[0].split("<")[1]
+            )
+            cur_emo2 = (
+                sample["current_turn2"].split("A: ")[1].split(">")[0].split("<")[1]
+            )
+            res_emo1 = (
+                sample["response_turn1"].split("B: ")[1].split(">")[0].split("<")[1]
+            )
+            res_emo2 = (
+                sample["response_turn2"].split("B: ")[1].split(">")[0].split("<")[1]
+            )
+            key_cur_emo1 = cur_emo1
+
+            cur_text1 = sample["current_turn1"].split("A: ")[1].split(">")[1].strip()
+            cur_text2 = sample["current_turn2"].split("A: ")[1].split(">")[1].strip()
+            res_text1 = sample["response_turn1"].split("B: ")[1].split(">")[1].strip()
+            res_text2 = sample["response_turn2"].split("B: ")[1].split(">")[1].strip()
+            try:
+                key_cur_text1 = text_dic[clean_string(cur_text1)]
+                key_cur_text2 = text_dic[clean_string(cur_text2)]
+            except KeyError:
+                continue
+
+            key1 = f"{key_cur_emo1}_{key_cur_text1}"
+
+            wav_list = wav_path_dic[key1]
+            if len(wav_list) != 0:
+                wav_paths1 = wav_list
+
+                for wav_path in wav_paths1:
+                    if residual:
+                        units, residual_length, residual_path = s2u(
+                            wav_path,
+                            merged=True,
+                            residual=True,
+                        )
+                        sample = {
+                            "prefix": f"{PREFIX_UNIFIED_NEW}"
+                            + f"{history} "
+                            + f"user: {units} ",
+                            "plain_text": f"<{cur_emo1}> {cur_text1} EmoSDS: <{res_emo1}> {res_text1}",
+                            "residual_length": residual_length,
+                            "residual_path": residual_path,
+                            "dialogue_id": f"{dialog_idx}_0",
+                        }
+                    else:
+                        units = s2u(wav_path, merged=True)
+                        sample = {
+                            "prefix": f"{PREFIX_UNIFIED_NEW}"
+                            + f"{history} "
+                            + f"Input: {units} ",
+                            "plain_text": f"<{cur_emo1}> {cur_text1} EmoSDS: <{res_emo1}> {res_text1}",
+                            "dialogue_id": f"{dialog_idx}_0",
+                        }
+
+                    samples_per_emo[cur_emo1].append(sample)
+                    formatted_samples.append(sample)
+
+            # continue
+
+            key_cur_emo2 = cur_emo2
+            key2 = f"{key_cur_emo2}_{key_cur_text2}"
+            
+            wav_list = wav_path_dic[key2]
+            if len(wav_list) != 0:
+                wav_paths2 = wav_list
+
+                for wav_path in wav_paths2:
+                    if residual:
+                        units, residual_length, residual_path = s2u(
+                            wav_path,
+                            merged=True,
+                            residual=True,
+                        )
+                        sample = {
+                            "prefix": f"{PREFIX_UNIFIED_NEW}"
+                            + f"{history} "
+                            + f"user: {units} ",
+                            "plain_text": f"<{cur_emo2}> {cur_text2} EmoSDS: <{res_emo2}> {res_text2}",
+                            "residual_length": residual_length,
+                            "residual_path": residual_path,
+                            "dialogue_id": f"{dialog_idx}_1",
+                        }
+                    else:
+                        units = s2u(wav_path, merged=True)
+                        sample = {
+                            "prefix": f"{PREFIX_UNIFIED_NEW}"
+                            + f"{history} "
+                            + f"Input: {units} ",
+                            "plain_text": f"<{cur_emo2}> {cur_text2} EmoSDS: <{res_emo2}> {res_text2}",
+                            "dialogue_id": f"{dialog_idx}_1",
+                        }
+
+                    samples_per_emo[cur_emo2].append(sample)
+                    formatted_samples.append(sample)
+
+    def extract_balanced_samples(
+        samples_per_emo,
+        total_samples,
+        thres,
+        selected_dialogues,
+        remove_selected_dialogue=False,
+    ):
+        num_samples_per_emotion = total_samples // len(samples_per_emo)
+        remaining_samples = total_samples % len(samples_per_emo)
+
+        selected_samples = []
+        for emotion in samples_per_emo:
+            n_samples = num_samples_per_emotion + (1 if remaining_samples > 0 else 0)
+            if remaining_samples > 0:
+                remaining_samples -= 1
+
+            random.shuffle(samples_per_emo[emotion])
+
+            if len(samples_per_emo[emotion]) >= n_samples:
+                if remove_selected_dialogue:
+                    selected = []
+                    selected_dialogues_temp = []
+                    for sample in samples_per_emo[emotion]:
+                        if len(selected) >= n_samples:
+                            break
+                        if sample["dialogue_id"] not in selected_dialogues:
+                            selected.append(sample)
+                            selected_dialogues_temp.append(sample["dialogue_id"])
+                            samples_per_emo[emotion].remove(sample)
+                    selected_dialogues.update(selected_dialogues_temp)
+                else:
+                    selected = random.sample(samples_per_emo[emotion], n_samples)
+                    for sample in selected:
+                        selected_dialogues.add(sample["dialogue_id"])
+                        samples_per_emo[emotion].remove(sample)
+                selected_samples.extend(selected)
+            else:
+                if remove_selected_dialogue:
+                    selected = []
+                    selected_dialogues_temp = []
+                    for sample in samples_per_emo[emotion]:
+                        if len(selected) >= len(samples_per_emo[emotion]) - thres:
+                            break
+                        if sample["dialogue_id"] not in selected_dialogues:
+                            selected.append(sample)
+                            selected_dialogues_temp.append(sample["dialogue_id"])
+                            samples_per_emo[emotion].remove(sample)
+                    selected_dialogues.update(selected_dialogues_temp)
+                else:
+                    selected = random.sample(
+                        samples_per_emo[emotion], len(samples_per_emo[emotion]) - thres
+                    )
+                    for sample in selected:
+                        selected_dialogues.add(sample["dialogue_id"])
+                        samples_per_emo[emotion].remove(sample)
+                selected_samples.extend(selected)
+
+        return selected_samples
+
+    selected_dialogues = set()
+    test_samples = extract_balanced_samples(
+        samples_per_emo, 250, 100, selected_dialogues
+    )
+    valid_samples = extract_balanced_samples(
+        samples_per_emo, 250, 0, selected_dialogues
+    )
+    train_samples = extract_balanced_samples(
+        samples_per_emo, 20000, 0, selected_dialogues, remove_selected_dialogue=True
+    )
+
+    def print_emo_stat(samples):
+        emotion_stat = defaultdict(int)
+        for sample in samples:
+            emotion = sample["plain_text"].split(">")[0].split("<")[-1]
+            emotion_stat[emotion] += 1
+
+        for emotion, count in sorted(emotion_stat.items()):
+            print(f"    {emotion}: {count} samples\n")
+
+    print("emotion distribution in train samples:")
+    print_emo_stat(train_samples)
+    print("emotion distribution in valid samples:")
+    print_emo_stat(valid_samples)
+    print("emotion distribution in test samples:")
+    print_emo_stat(test_samples)
+
+    return train_samples, valid_samples, test_samples
 
 
 def save_to_jsonl(samples, output_file):
@@ -240,80 +460,90 @@ def main(
     task: Annotated[
         str,
         typer.Argument(
-            help="Specify task for dataset format. Options: ['asr', 'unified']"
+            help="Specify task for dataset format. Options: ['asr', 'asr+ser', 'unified']"
         ),
     ],
     librispeech_dir: Annotated[
         str, typer.Option(help="Directory path for LibriSpeech dataset")
     ] = None,
-    dailytalk_dir: Annotated[
-        str, typer.Option(help="Directory path for DailyTalk dataset")
+    esd_dir: Annotated[str, typer.Option(help="Directory path for ESD dataset")] = None,
+    esd_syn_path: Annotated[
+        str, typer.Option(help="File path to esd synthesized dataset")
     ] = None,
+    residual: Annotated[
+        bool, typer.Option(help="Whether to use residual feature")
+    ] = False,
 ):
     from speech2unit.speech2unit import Speech2UnitCustom
-
-    styletalk_train_csv = "data/styletalk/train.csv"
-    styletalk_eval_csv = "data/styletalk/eval_without_weather_465.csv"
+    from asr_ser_split_jsonl_dataset import asr_ser_split_data
+    from diversify_prompt import diversify_prompt
 
     ckpt_dir = "utils/speech2unit/"
     s2u = Speech2UnitCustom(ckpt_dir=ckpt_dir)
 
-    # >> build asr task dataset
+    # >> build ASR task dataset
     if task == "asr":
 
         if librispeech_dir is not None:
             librispeech_samples = asr_extract_samples_librispeech(librispeech_dir, s2u)
-            output_path_librispeech = "data/asr_task_librispeech.jsonl"
-            save_to_jsonl(librispeech_samples, output_path_librispeech)
-            print(
-                f"\nLibrispeech samples saved to {output_path_librispeech}: {len(librispeech_samples)}"
+            output_path_librispeech = (
+                "data/asr/asr_task_librispeech_tmp_test.jsonl"
             )
+            save_to_jsonl(librispeech_samples, output_path_librispeech)
+            # print(
+            #     f"\nLibrispeech samples saved to {output_path_librispeech}: {len(librispeech_samples)}"
+            # )
+            diversify_prompt(output_path_librispeech, "data/asr/asr_task_librispeech_test.jsonl", "data/asr/prompts_for_asr.txt", False)
         else:
             print(
                 "Skipping LibriSpeech dataset. You can provide path through --librispeech-dir option"
             )
 
-        styletalk_samples_train = asr_extract_samples_styletalk(
-            styletalk_train_csv, s2u
-        )
-        styletalk_samples_eval = asr_extract_samples_styletalk(styletalk_eval_csv, s2u)
+    # >> build ASR+SER task dataset
+    elif task == "asr+ser":
+        if esd_dir is not None:
+            esd_samples = asr_ser_extract_samples_esd(esd_dir, s2u, residual=residual)
+        
+            output_path_esd = (
+                "data/asr_ser/asr_ser_task_esd.jsonl"
+            )
+            save_to_jsonl(esd_samples, output_path_esd)
+            train_samples, valid_samples, test_samples = asr_ser_split_data(jsonl_path=output_path_esd)
+            output_path_train = "data/asr_ser/asr_ser_task_esd_train_tmp.jsonl"
+            output_path_test = "data/asr_ser/asr_ser_task_esd_test_tmp.jsonl"
+            output_path_valid = "data/asr_ser/asr_ser_task_esd_valid_tmp.jsonl"
 
-        output_path_styletalk_train = "data/asr_task_styletalk_train.jsonl"
-        output_path_styletalk_eval = "data/asr_task_styletalk_eval.jsonl"
+            save_to_jsonl(train_samples, output_path_train)
+            save_to_jsonl(test_samples, output_path_test)
+            save_to_jsonl(valid_samples, output_path_valid)
 
-        save_to_jsonl(styletalk_samples_train, output_path_styletalk_train)
-        save_to_jsonl(styletalk_samples_eval, output_path_styletalk_eval)
-
-        print(
-            f"\nStyleTalk train samples saved to {output_path_styletalk_train}: {len(styletalk_samples_train)}"
-        )
-        print(
-            f"\nStyleTalk eval samples saved to {output_path_styletalk_eval}: {len(styletalk_samples_eval)}"
-        )
+            diversify_prompt(output_path_train, "data/asr_ser/asr_ser_task_esd_train.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
+            diversify_prompt(output_path_test, "data/asr_ser/asr_ser_task_esd_test.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
+            diversify_prompt(output_path_valid, "data/asr_ser/asr_ser_task_esd_valid.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
+            # print(f"\nESD samples saved to {output_path_esd}: {len(esd_samples)}")
+        else:
+            print("Skipping ESD dataset. You can provide path through --esd-dir option")
 
     # >> build unified task dataset
     elif task == "unified":
-        if dailytalk_dir is None:
-            raise RuntimeError(
-                "Please provide dailytalk dir path through --dailytalk-dir"
+        if esd_dir is not None:
+            if esd_syn_path is None:
+                raise RuntimeError(
+                    "Please provide ESD synthesized data file path through --esd-syn-path"
+                )
+            train_samples, valid_samples, test_samples = unified_extract_samples_esd(
+                esd_dir, esd_syn_path, s2u, residual=True
             )
 
-        train_samples, test_samples = unified_extract_samples_dailytalk(
-            dailytalk_dir, s2u, test_size=0.05
-        )
+            output_path_esd_train = "data/unified/unified_task_esd_train.jsonl"
+            output_path_esd_test = "data/unified/unified_task_esd_test.jsonl"
+            output_path_esd_valid = "data/unified/unified_task_esd_valid.jsonl"
 
-        output_path_dailytalk_train = "data/unified_task_dailytalk_train.jsonl"
-        output_path_dailytalk_test = "data/unified_task_dailytalk_test.jsonl"
-
-        save_to_jsonl(train_samples, output_path_dailytalk_train)
-        save_to_jsonl(test_samples, output_path_dailytalk_test)
-
-        print(
-            f"\nTotal train samples saved to {output_path_dailytalk_train}: {len(train_samples)}"
-        )
-        print(
-            f"\nTotal test samples saved to {output_path_dailytalk_test}: {len(test_samples)}"
-        )
+            save_to_jsonl(train_samples, output_path_esd_train)
+            save_to_jsonl(test_samples, output_path_esd_test)
+            save_to_jsonl(valid_samples, output_path_esd_valid)
+        else:
+            print("Skipping ESD dataset. You can provide path through --esd-dir option")
 
 
 if __name__ == "__main__":

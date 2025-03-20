@@ -23,11 +23,9 @@ def load_models(
     wavlm_model_name="patrickvonplaten/wavlm-libri-clean-100h-large",
     kmeans_path="LibriSpeech_wavlm_k1000_L12.pt",
 ):
-    # >> Load WavLM
     processor = AutoProcessor.from_pretrained(wavlm_model_name)
     wavlm = WavLMModel.from_pretrained(wavlm_model_name)
 
-    # >> Load KMeans model
     kmeans = ApplyKmeans(kmeans_path)
 
     return processor, wavlm, kmeans
@@ -36,18 +34,20 @@ def load_models(
 class ApplyKmeans(object):
     def __init__(self, km_path):
         self.km_model = joblib.load(km_path)
-        self.C_np = self.km_model.cluster_centers_.transpose()
-        self.Cnorm_np = (self.C_np**2).sum(0, keepdims=True)
+        self.C_np = (
+            self.km_model.cluster_centers_.transpose()
+        )
+        self.Cnorm_np = (self.C_np**2).sum(
+            0, keepdims=True
+        )
 
         self.C = torch.from_numpy(self.C_np)
-        print(f"size of C of kmeans model: {self.C.shape}")  # just for debugging
         self.Cnorm = torch.from_numpy(self.Cnorm_np)
         if torch.cuda.is_available():
             self.C = self.C.cuda()
             self.Cnorm = self.Cnorm.cuda()
 
     def __call__(self, x):
-        # x: (num, ssl_hidden_dim)
         if isinstance(x, torch.Tensor):
             self.C = self.C.to(x)
             self.Cnorm = self.Cnorm.to(x)
@@ -69,12 +69,16 @@ class Speech2UnitCustom(torch.nn.Module):
         super().__init__()
 
         encoder_name = "patrickvonplaten/wavlm-libri-clean-100h-large"
-        km_path = os.path.join(ckpt_dir, "LibriSpeech_wavlm_k1000_L12.pt")
+        km_path = os.path.join(
+            ckpt_dir,
+            "LibriSpeech100-360-500_wavlm_k1000_L6.pt",
+        )
 
         processor, wavlm, kmeans = load_models(
             wavlm_model_name=encoder_name, kmeans_path=km_path
         )
 
+        self.layer_num = 6
         self.processor = processor
         self.wavlm = wavlm
         self.kmeans = kmeans
@@ -93,16 +97,31 @@ class Speech2UnitCustom(torch.nn.Module):
                 count = 1
         return dup_cluster_list, duration_list
 
+    @staticmethod
+    def downsample(cluster_ids):
+        downsampled_clusters = cluster_ids[::4]
+        duration_list = [4] * len(downsampled_clusters)
+        # Handle the last segment if total length is not divisible by 4
+        if len(cluster_ids) % 4 != 0:
+            duration_list[-1] = len(cluster_ids) % 4
+        return downsampled_clusters, duration_list
+
     def extract_wavlm_features(
         self,
         audio_path,
-        layer_num=12,
+        layer_num=None,
         device="cuda" if torch.cuda.is_available() else "cpu",
     ):
         self.wavlm = self.wavlm.to(device)
         self.wavlm.eval()
 
-        waveform, sample_rate = torchaudio.load(audio_path)
+        if layer_num is None:
+            layer_num = self.layer_num
+
+        try:
+            waveform, sample_rate = torchaudio.load(audio_path)
+        except RuntimeError as e:
+            raise e
 
         # >> Convert to mono if stereo
         if waveform.shape[0] > 1:
@@ -133,31 +152,43 @@ class Speech2UnitCustom(torch.nn.Module):
             outputs = self.wavlm(**inputs, output_hidden_states=True)
             layer_output = outputs.hidden_states[
                 layer_num
-            ]  # (batch_size, sequence_length, 1024)
+            ]
             features = layer_output.flatten(
                 end_dim=-2
-            )  # (sequence_length, hidden_size)
+            )
 
         return features.cpu().numpy()
 
-    def __call__(self, path, merged=True):
+    def get_cluster_embedding(self, cluster_id):
+        # Get the cluster center (embedding) for a given cluster ID
+        return self.kmeans.C_np[:, cluster_id]
 
-        features = self.extract_wavlm_features(path)
+    def __call__(self, path, merged=True, downsample=False, residual=False):
+        if residual:
+            residual_path = str(path).replace(
+                "EmotionSpeechDataset", "EmotionSpeechDataset_residual_6L-1000k"
+            )
+            residual_path = os.path.splitext(residual_path)[0] + ".npy"
+            residual_np = np.load(residual_path)
+            residual_length = residual_np.shape[0]
+
+        try:
+            features = self.extract_wavlm_features(path)
+        except RuntimeError as e:
+            raise e
+
         cluster_ids = self.kmeans(features).tolist()
-        dup_cluster_list, duration_list = self.merge_duplicates(cluster_ids)
-
-        merged_units = (
-            "<sosp>" + "".join([f"<{str(x)}>" for x in dup_cluster_list]) + "<eosp>"
-        )
-        unmerged_units = (
-            "<sosp>" + "".join([f"<{str(x)}>" for x in cluster_ids]) + "<eosp>"
-        )
 
         if merged:
-            return merged_units
+            new_cluster_list, duration_list = self.merge_duplicates(cluster_ids)
+        elif downsample:
+            new_cluster_list, duration_list = self.downsample(cluster_ids)
         else:
-            return unmerged_units
+            new_cluster_list = cluster_ids
 
+        units = "<sosp>" + "".join([f"<{str(x)}>" for x in new_cluster_list]) + "<eosp>"
 
-if __name__ == "__main__":
-    raise RuntimeError("Direct execution is not currently supported (˘･_･˘)")
+        if residual:
+            return units, residual_length, residual_path
+        else:
+            return units
