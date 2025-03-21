@@ -1,12 +1,8 @@
 #!/bin/bash
 
-# METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
-METAROOT="/home/jhwan98/EmoSDS/SpeechGPT/speechgpt/llama/3_2/3B/Llama-3.2-3B-Instruct"
-# METAROOT="/shared/NAS_SSD/jhl/futureinternet/output/asr_6layer_k256/"
-# DATAROOT="data/asr/layer6_k1000_merged"
+METAROOT="llama/3_2/3B/Llama-3.2-3B-Instruct"
 DATAROOT="data/asr"
-# OUTROOT="./"
-OUTROOT="/shared/data_zfs/jhwan/futureinternet/output/asr_test_20250319"
+OUTROOT="./"
 CACHEROOT="${DATAROOT}/cache/"
 
 
@@ -15,14 +11,14 @@ mkdir -p ${CACHEROOT}/tokenized/valid/
 
 echo "================================= asr fine-tuning ================================="
 
-export CUDA_VISIBLE_DEVICES=0,2
+export NCCL_P2P_DISABLE=1
 torchrun \
     --nproc_per_node 2 \
     --standalone \
 src/train/sft.py \
     --train_task "asr" \
     --model_name_or_path "${METAROOT}" \
-    --data_path "${DATAROOT}/asr_task_librispeech_test.jsonl" \
+    --data_path "${DATAROOT}/asr_task_librispeech.jsonl" \
     --val_set_size 100 \
     --cache_dir ${CACHEROOT} \
     --preprocessing_num_workers 10 \

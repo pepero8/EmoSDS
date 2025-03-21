@@ -46,9 +46,9 @@ Prerequisites:
 ### Stage 1
 Download LibriSpeech train-clean-100 dataset.
 
-```python
+```bash
 # create stage 1 data
-python3 utils/build_data.py asr --librispeech-dir /path/to/your/librispeech/data
+python3 utils/build_data.py asr --librispeech-dir [path_to_your_librispeech_data]
 
 # train
 bash scripts/asr_sft.sh
@@ -60,9 +60,9 @@ Download ESD from [ESD official repository](https://github.com/HLTSingapore/Emot
 
 Download residual files (ESD_residual.zip) from our google drive, under the same parent directory of ESD.
 
-```python
+```bash
 # create stage 2 data
-python3 utils/build_data.py asr+ser --esd-dir /path/to/your/ESD/data --residual
+python3 utils/build_data.py asr+ser --esd-dir [path_to_your_ESD_data] --residual
 
 # train
 bash scripts/asr_ser_sft.sh # in the script, you should specify stage 1 checkpoint path via METAROOT
@@ -72,9 +72,9 @@ bash scripts/asr_ser_sft.sh # in the script, you should specify stage 1 checkpoi
 
 Download synthesized dialogue data (EmoSC_dialogues.jsonl) from our google drive.
 
-```python
+```bash
 # create stage 3 data (EmoSC)
-python3 utils/build_data.py unified --esd-dir /path/to/your/ESD/data --esd-syn-path /path/to/dialogue/data
+python3 utils/build_data.py unified --esd-dir [path_to_your_ESD_data] --esd-syn-path [path_to_dialogue_data]
 
 # train
 bash scripts/unified_sft.sh # in the script, you should specify stage 2 checkpoint path via METAROOT
@@ -82,3 +82,5 @@ bash scripts/unified_sft.sh # in the script, you should specify stage 2 checkpoi
 
 ## Acknowledgement
 Portions of the research in this paper used the ESD Database made available by the HLT lab, National University of Singapore, Singapore.
+
+Portions of the code were adapted and modified from [SpeechGPT](https://arxiv.org/abs/2305.11000)

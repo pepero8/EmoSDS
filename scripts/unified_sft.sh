@@ -1,10 +1,7 @@
 #!/bin/bash
 
 METAROOT="path/to/your/stage2/model"
-# DATAROOT="data/unified/layer6_k1000_downsampled"
-# DATAROOT="data/unified/layer6_k1000_merged"
 DATAROOT="data/unified"
-# DATAROOT="data/unified/layer7_k2000_merged2"
 OUTROOT="./"
 CACHEROOT="${DATAROOT}/cache/"
 
@@ -12,9 +9,9 @@ CACHEROOT="${DATAROOT}/cache/"
 mkdir -p ${CACHEROOT}/tokenized/train/
 mkdir -p ${CACHEROOT}/tokenized/valid/
 
-echo "================================= unified fine-tuning ================================="
+echo "================================= stage3 fine-tuning ================================="
 
-export CUDA_VISIBLE_DEVICES=1,2
+export NCCL_P2P_DISABLE=1
 torchrun \
     --nproc_per_node 2 \
     --standalone \
@@ -45,7 +42,7 @@ src/train/sft_residual.py \
     --save_strategy "steps" \
     --save_steps 231 \
     --load_best_model_at_end True \
-    --metric_for_best_model "blue_res_text" \
+    --metric_for_best_model "bleu_res_text" \
     --greater_is_better True \
     --learning_rate 2e-4 \
     --weight_decay 0. \
