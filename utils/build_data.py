@@ -6,42 +6,6 @@ random.seed(42)
 
 PREFIX_ASR = "Transcribe following speech input:"
 PREFIX_ASR_SER = "Predict emotion of following speech input and transcribe it. The output format should be like this: '<emotion> transcription'. prompt:"
-# PREFIX_UNIFIED = """
-# # Task
-# From now on, you are an intelligent voice assistant. You need to provide useful, consistent to the dialogue context, emotionally approval natural response to the user's input speech.
-# Given user speech and history, you need to identify the emotion, transcribe the user speech, predict appropriate response emotion, and predict appropriate response text according to the context.
-# Each dialogue turn is formatted as: '{speaker}: <emotion> text'.
-# You must use only 'A' or 'B' for {speaker}.
-# The emotion should be one of following 5 emotions: <anger>, <happiness>, <neutral>, <sadness>, <surprise>
-
-# # Examples
-# Following examples show example dialogues with emotion and text. The caption in angle brackets indicate emotion of the transcription.
-
-# ## Example 1
-# 1. A: <neutral> It just tastes so good, you know?
-# 2. B: <happiness> That's awesome! It's always great to find something you enjoy. Do you use it on anything specific, like toast or cooking?
-# 3. A: <surprise> I can't believe it's not butter!
-# 4. B: <happiness> Oh wow, you're really passionate about this! So, what is it about "I Can't Believe It's Not Butter" that's got you so surprised?
-
-# ## Example 2
-# 1. A: <anger> I can't believe it's not butter!
-# 2. B: <neutral> Whoa, okay, let's take a deep breath and try to calm down. Are you actually upset that it's not butter? What's really going on here?
-
-# ## Example 3
-# 1. A: <neutral> I watched a baseball game on the weekend
-# 2. B: <neutral> Oh cool! how was it?
-# 3. A: <sadness> The game wasn't bad
-# 4. B: <sadness> You don't seem too happy, did your team lose?
-
-# ## Example 4
-# 1. A: <neutral> I watched a baseball game on the weekend
-# 2. B: <neutral> Oh cool! how was it?
-# 3. A: <happiness> The game wasn't bad
-# 4. B: <happiness> That's great to hear! Did your favorite team win?
-
-# Here's the prompt:
-
-# """
 PREFIX_UNIFIED_NEW = """
 # Task
 From now on, you are an intelligent voice assistant. You need to provide useful, consistent to the dialogue context, emotionally approval natural response to the user's input speech.
@@ -425,24 +389,8 @@ def unified_extract_samples_esd(data_path, synthesized_path, s2u, residual=False
         samples_per_emo, 250, 0, selected_dialogues
     )
     train_samples = extract_balanced_samples(
-        samples_per_emo, 20000, 0, selected_dialogues, remove_selected_dialogue=True
+        samples_per_emo, 50000, 0, selected_dialogues, remove_selected_dialogue=True
     )
-
-    def print_emo_stat(samples):
-        emotion_stat = defaultdict(int)
-        for sample in samples:
-            emotion = sample["plain_text"].split(">")[0].split("<")[-1]
-            emotion_stat[emotion] += 1
-
-        for emotion, count in sorted(emotion_stat.items()):
-            print(f"    {emotion}: {count} samples\n")
-
-    print("emotion distribution in train samples:")
-    print_emo_stat(train_samples)
-    print("emotion distribution in valid samples:")
-    print_emo_stat(valid_samples)
-    print("emotion distribution in test samples:")
-    print_emo_stat(test_samples)
 
     return train_samples, valid_samples, test_samples
 
@@ -487,13 +435,10 @@ def main(
         if librispeech_dir is not None:
             librispeech_samples = asr_extract_samples_librispeech(librispeech_dir, s2u)
             output_path_librispeech = (
-                "data/asr/asr_task_librispeech_tmp_test.jsonl"
+                "data/asr/asr_task_librispeech.jsonl"
             )
             save_to_jsonl(librispeech_samples, output_path_librispeech)
-            # print(
-            #     f"\nLibrispeech samples saved to {output_path_librispeech}: {len(librispeech_samples)}"
-            # )
-            diversify_prompt(output_path_librispeech, "data/asr/asr_task_librispeech_test.jsonl", "data/asr/prompts_for_asr.txt", False)
+            diversify_prompt(output_path_librispeech, "data/asr/asr_task_librispeech.jsonl", "data/asr/prompts_for_asr.txt", False)
         else:
             print(
                 "Skipping LibriSpeech dataset. You can provide path through --librispeech-dir option"
@@ -520,7 +465,6 @@ def main(
             diversify_prompt(output_path_train, "data/asr_ser/asr_ser_task_esd_train.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
             diversify_prompt(output_path_test, "data/asr_ser/asr_ser_task_esd_test.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
             diversify_prompt(output_path_valid, "data/asr_ser/asr_ser_task_esd_valid.jsonl", "data/asr_ser/prompts_for_asr_ser.txt", True)
-            # print(f"\nESD samples saved to {output_path_esd}: {len(esd_samples)}")
         else:
             print("Skipping ESD dataset. You can provide path through --esd-dir option")
 

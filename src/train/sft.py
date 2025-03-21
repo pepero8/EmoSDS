@@ -37,6 +37,9 @@ class DataArguments:
     test_data_path: str = field(
         default=None, metadata={"help": "Path to the test data"}
     )
+    test_data_path: str = field(
+        default=None, metadata={"help": "Path to the test data"}
+    )
     # prompt_template_name: str = field(
     #     default="alpaca",
     #     metadata={"help": "prompt_template_name"},
@@ -529,39 +532,6 @@ def train():
                 emo_labels.append(emo_idx)
                 texts_labels.append(text)
 
-            # # > for Per-class prediction tracking
-            # per_class_correct = defaultdict(int)
-            # per_class_total = defaultdict(int)
-
-            # valid_emotions_rev = dict(zip(valid_emotions.values(), valid_emotions.keys()))
-
-            # # > calculate per-emotion class accuracy for emotion
-            # for pred, label in zip(emo_preds, emo_labels):
-            #     per_class_total[valid_emotions_rev[label]] += 1
-            #     if pred == label:
-            #         per_class_correct[valid_emotions_rev[label]] += 1
-
-            # per_class_acc = {}
-            # total_class_acc = 0
-            # num_classes = 0
-
-            # for emo in valid_emotions.keys():
-            #     if per_class_total[emo] > 0:
-            #         accuracy = (per_class_correct[emo] / per_class_total[emo]) * 100
-            #         per_class_acc[f"emo_acc_{emo}"] = accuracy
-            #         total_class_acc += accuracy
-            #         num_classes += 1
-
-            # # > Calculate unweighted average accuracy
-            # unweighted_accuracy = (
-            #     total_class_acc / num_classes if num_classes > 0 else 0
-            # )
-
-            # emo_bleu = bleu_metric.compute(
-            #     predictions=emo_preds,
-            #     references=[[label] for label in emo_labels],
-            # )
-
             # > Calculate WER
             wer_text = wer_metric.compute(
                 predictions=texts_preds, references=texts_labels
@@ -580,9 +550,7 @@ def train():
             result = {
                 "wer_text": wer_text * 100,
                 "cer_text": cer_text * 100,
-                # "emo_UA": unweighted_accuracy,
                 "emo_f1": f1["f1"] * 100,
-                # **per_class_acc,
             }
         elif training_args.train_task == "unified":
             # > Extract parts from predictions
@@ -597,11 +565,6 @@ def train():
                 [],
                 [],
             )
-
-            # # > Emotion validation counters
-            # valid_cur_emo_count = 0
-            # valid_response_emo_count = 0
-            # total_count = 0
 
             for pred in decoded_preds:
                 cur_emo, cur_text, response_emo, response_text = extract_parts(pred)
@@ -656,76 +619,11 @@ def train():
                 response_emo_labels.append(response_emo_idx)
                 response_texts_labels.append(response_text)
 
-            # cur_emo_valid_percentage = (valid_cur_emo_count / total_count) * 100
-            # response_emo_valid_percentage = (
-            #     valid_response_emo_count / total_count
-            # ) * 100
-
-            # # > for Per-class prediction tracking
-            # cur_per_class_correct = defaultdict(int)
-            # cur_per_class_total = defaultdict(int)
-            # res_per_class_correct = defaultdict(int)
-            # res_per_class_total = defaultdict(int)
-
-            # valid_emotions_rev = dict(zip(valid_emotions.values(), valid_emotions.keys()))
-
-            # # > calculate per-emotion class accuracy for current emotion
-            # for pred, label in zip(cur_emo_preds, cur_emo_labels):
-            #     cur_per_class_total[valid_emotions_rev[label]] += 1
-            #     if pred == label:
-            #         cur_per_class_correct[valid_emotions_rev[label]] += 1
-
-            # # > calculate per-emotion class accuracy for response emotion
-            # for pred, label in zip(response_emo_preds, response_emo_labels):
-            #     res_per_class_total[valid_emotions_rev[label]] += 1
-            #     if pred == label:
-            #         res_per_class_correct[valid_emotions_rev[label]] += 1
-
-            # cur_per_class_acc = {}
-            # cur_total_class_acc = 0
-            # cur_num_classes = 0
-            # res_per_class_acc = {}
-            # res_total_class_acc = 0
-            # res_num_classes = 0
-
-            # for emo in valid_emotions.keys():
-            #     if cur_per_class_total[emo] > 0:
-            #         cur_accuracy = (
-            #             cur_per_class_correct[emo] / cur_per_class_total[emo]
-            #         ) * 100
-            #         cur_per_class_acc[f"cur_emo_acc_{emo}"] = cur_accuracy
-            #         cur_total_class_acc += cur_accuracy
-            #         cur_num_classes += 1
-
-            #     if res_per_class_total[emo] > 0:
-            #         res_accuracy = (
-            #             res_per_class_correct[emo] / res_per_class_total[emo]
-            #         ) * 100
-            #         res_per_class_acc[f"res_emo_acc_{emo}"] = res_accuracy
-            #         res_total_class_acc += res_accuracy
-            #         res_num_classes += 1
-
-            # # > Calculate unweighted average accuracy
-            # cur_unweighted_accuracy = (
-            #     cur_total_class_acc / cur_num_classes if cur_num_classes > 0 else 0
-            # )
-            # res_unweighted_accuracy = (
-            #     res_total_class_acc / res_num_classes if res_num_classes > 0 else 0
-            # )
-
-            # acc_results_cur_style = acc_metric.compute(
-            #     predictions=cur_styles_preds,
-            #     references=cur_styles_labels,
-            # )
             f1_results_cur_emo = f1_metric.compute(
                 predictions=cur_emo_preds,
                 references=cur_emo_labels,
                 average="weighted",
             )
-            # acc_results_response_emo = acc_metric.compute(
-            #     predictions=response_emo_preds,
-            #     references=response_emo_labels,
-            # )
             f1_results_response_emo = f1_metric.compute(
                 predictions=response_emo_preds,
                 references=response_emo_labels,
@@ -754,28 +652,17 @@ def train():
             )
 
             result = {
-                # "acc_cur_emo": acc_results_cur_emo["accuracy"] * 100,
                 "weighted_f1_cur_emo": f1_results_cur_emo["f1"] * 100,
-                # "acc_res_emo": acc_results_response_emo["accuracy"] * 100,
                 "weighted_f1_res_emo": f1_results_response_emo["f1"] * 100,
-                # "bleu_cur_text": bleu_results_cur_text["score"],
                 "bleu_res_text": bleu_results_response_text["score"],
                 "wer_cur_text": wer_cur_text * 100,
-                # "wer_res_text": wer_response_text * 100,
                 "cer_cur_text": cer_cur_text * 100,
-                # "cer_res_text": cer_response_text * 100,
                 "bertscore_f1": (
                     sum(bertscore_results["f1"]) / len(bertscore_results["f1"])
                 )
                 * 100,
                 "rouge_L": rouge_results["rougeL"],
                 "meteor": meteor_results["meteor"],
-                # "valid_cur_emo_percentage": cur_emo_valid_percentage,
-                # "valid_response_emo_percentage": response_emo_valid_percentage,
-                # "cur_emo_UA": cur_unweighted_accuracy,
-                # "res_emo_UA": res_unweighted_accuracy,
-                # **cur_per_class_acc,
-                # **res_per_class_acc,
             }
 
         return result

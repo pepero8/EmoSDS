@@ -11,7 +11,7 @@ mkdir -p ${CACHEROOT}/tokenized/valid/
 
 echo "================================= asr+ser fine-tuning ================================="
 
-export CUDA_VISIBLE_DEVICES=0,2
+export NCCL_P2P_DISABLE=1
 torchrun \
     --nproc_per_node 2 \
     --standalone \
@@ -19,9 +19,9 @@ src/train/sft_residual.py \
     --train_task "asr+ser" \
     --emo_token_list "<anger> <happiness> <neutral> <sadness> <surprise>" \
     --model_name_or_path "${METAROOT}" \
-    --data_path "${DATAROOT}/asr_ser_task_train_esd.jsonl" \
-    --val_data_path "${DATAROOT}/asr_ser_task_valid_esd.jsonl" \
-    --test_data_path "${DATAROOT}/asr_ser_task_test_esd.jsonl" \
+    --data_path "${DATAROOT}/asr_ser_task_esd_train.jsonl" \
+    --val_data_path "${DATAROOT}/asr_ser_task_esd_valid.jsonl" \
+    --test_data_path "${DATAROOT}/asr_ser_task_esd_test.jsonl" \
     --val_set_size 0 \
     --cache_dir ${CACHEROOT} \
     --preprocessing_num_workers 10 \
