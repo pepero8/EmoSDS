@@ -40,10 +40,6 @@ class DataArguments:
     test_data_path: str = field(
         default=None, metadata={"help": "Path to the test data"}
     )
-    # prompt_template_name: str = field(
-    #     default="alpaca",
-    #     metadata={"help": "prompt_template_name"},
-    # )
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
