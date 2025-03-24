@@ -1,6 +1,7 @@
 # EmoSDS
 
-This is a repository of paper: EmoSDS: Emotionally Adaptive Spoken dialogue System
+This is a repository of paper: "EmoSDS: Unified Emotionally Adaptive Spoken Dialogue System Using
+Self-Supervised Speech Representations"
 
 <img width="600" alt="image" src="asset/emosds_only_model_2.png">
 
